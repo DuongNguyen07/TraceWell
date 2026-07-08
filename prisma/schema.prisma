@@ -1,0 +1,171 @@
+// This is your Prisma schema file for TraceWell
+// Learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ──────────────────────────────────────────────────────────────────
+
+enum Role {
+  PATIENT
+  NURSE
+  DOCTOR
+  FAMILY_MEMBER
+  MANAGER
+}
+
+enum NoteType {
+  OBSERVATION
+  HANDOVER
+  VOICE_TRANSCRIPTION
+}
+
+enum AlertType {
+  MISSING_DATA
+  WELLBEING_CHANGE
+  HIGH_RISK
+  MEDICATION
+}
+
+enum AlertSeverity {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+// ─── Models ─────────────────────────────────────────────────────────────────
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  role      Role
+  password  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  patientProfile   PatientProfile?  @relation("PatientUser")
+  assignedPatients PatientProfile[] @relation("AssignedClinician")
+  familyLinks      FamilyLink[]     @relation("FamilyMember")
+  nursingNotes     NursingNote[]
+  auditLogs        AuditLog[]
+  notifications    Notification[]
+}
+
+model PatientProfile {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  dateOfBirth DateTime?
+  ward        String?
+  roomNumber  String?
+  diagnosis   String?
+  allergies   String[]
+  preferences Json?    // personalised care preferences
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  user              User             @relation("PatientUser", fields: [userId], references: [id], onDelete: Cascade)
+  assignedClinician User?            @relation("AssignedClinician", fields: [clinicianId], references: [id])
+  clinicianId       String?
+  healthRecords     HealthRecord[]
+  nursingNotes      NursingNote[]
+  familyLinks       FamilyLink[]
+  alerts            Alert[]
+}
+
+model HealthRecord {
+  id               String   @id @default(cuid())
+  patientProfileId String
+  recordedAt       DateTime @default(now())
+  symptoms         String[]
+  mood             Int?     // 1–10 scale
+  sleepHours       Float?
+  energyLevel      Int?     // 1–10 scale
+  painLevel        Int?     // 1–10 scale
+  notes            String?
+  createdAt        DateTime @default(now())
+
+  // Relations
+  patientProfile PatientProfile @relation(fields: [patientProfileId], references: [id], onDelete: Cascade)
+}
+
+model NursingNote {
+  id               String   @id @default(cuid())
+  patientProfileId String
+  authorId         String
+  type             NoteType
+  rawContent       String   // original voice transcript or typed note
+  structuredNote   String?  // AI-generated structured version
+  aiSummary        String?  // AI-generated handover summary
+  audioUrl         String?  // link to stored audio if voice note
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // Relations
+  patientProfile PatientProfile @relation(fields: [patientProfileId], references: [id], onDelete: Cascade)
+  author         User           @relation(fields: [authorId], references: [id])
+}
+
+model FamilyLink {
+  id               String   @id @default(cuid())
+  familyMemberId   String
+  patientProfileId String
+  relationship     String   // e.g. "parent", "spouse"
+  canViewRecords   Boolean  @default(false)
+  canViewSummaries Boolean  @default(true)
+  createdAt        DateTime @default(now())
+
+  // Relations
+  familyMember   User           @relation("FamilyMember", fields: [familyMemberId], references: [id], onDelete: Cascade)
+  patientProfile PatientProfile @relation(fields: [patientProfileId], references: [id], onDelete: Cascade)
+
+  @@unique([familyMemberId, patientProfileId])
+}
+
+model Alert {
+  id               String        @id @default(cuid())
+  patientProfileId String
+  type             AlertType
+  severity         AlertSeverity
+  message          String
+  isRead           Boolean       @default(false)
+  resolvedAt       DateTime?
+  createdAt        DateTime      @default(now())
+
+  // Relations
+  patientProfile PatientProfile @relation(fields: [patientProfileId], references: [id], onDelete: Cascade)
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  link      String?
+  createdAt DateTime @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String
+  action     String   // e.g. "VIEW_PATIENT", "CREATE_NOTE", "UPDATE_RECORD"
+  resourceId String?
+  metadata   Json?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id])
+}

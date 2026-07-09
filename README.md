@@ -1,7 +1,6 @@
-# TraceWell 🏥
-
-> AI-Powered Healthcare Documentation & Communication Platform  
-> ATW306 Capstone Project
+# TraceWell 
+AI-Powered Healthcare Documentation & Communication Platform  
+ATW306 Capstone Project
 
 ## Tech Stack
 

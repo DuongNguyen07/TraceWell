@@ -7,7 +7,7 @@ const ROLE_ROUTES: Record<string, Role[]> = {
   '/nurse':    ['NURSE'],
   '/doctor':   ['DOCTOR'],
   '/family':   ['FAMILY_MEMBER'],
-  '/manager':  ['MANAGER'],
+  '/manager':  ['MANAGER', 'ADMIN'],
 }
 
 export default withAuth(
@@ -26,6 +26,9 @@ export default withAuth(
   {
     callbacks: {
       authorized: ({ token }) => !!token,
+    },
+    pages: {
+      signIn: '/login',
     },
   }
 )

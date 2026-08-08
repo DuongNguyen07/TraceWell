@@ -1,13 +1,9 @@
-// This is your Prisma schema file for TraceWell
-// Learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 // ─── Enums ──────────────────────────────────────────────────────────────────
@@ -18,19 +14,22 @@ enum Role {
   DOCTOR
   FAMILY_MEMBER
   MANAGER
+  ADMIN
 }
 
 enum NoteType {
-  OBSERVATION
-  HANDOVER
+  CAMERA_UPLOAD
+  CAMERA_TAKE_PICTURE
+  HANDOVER_TEXTBOX
   VOICE_TRANSCRIPTION
 }
 
 enum AlertType {
   MISSING_DATA
   WELLBEING_CHANGE
-  HIGH_RISK
+  HIGH_RISK //Red_colour
   MEDICATION
+  DISCHARGE_PATIENT
 }
 
 enum AlertSeverity {
@@ -167,5 +166,5 @@ model AuditLog {
   createdAt  DateTime @default(now())
 
   // Relations
-  user User @relation(fields: [userId], references: [id])
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

@@ -8,12 +8,21 @@
     "start": "next start",
     "lint": "eslint"
   },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",
+    "@prisma/adapter-pg": "^7.9.1",
     "@prisma/client": "^7.8.0",
+    "@supabase/ssr": "^0.12.4",
+    "@supabase/supabase-js": "^2.112.0",
+    "@types/pg": "^8.20.4",
     "bcryptjs": "^3.0.3",
+    "lucide-react": "^1.28.0",
     "next": "16.2.9",
     "next-auth": "^4.24.14",
+    "pg": "^8.22.0",
     "prisma": "^7.8.0",
     "react": "19.2.4",
     "react-dom": "19.2.4"
@@ -27,6 +36,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.9",
     "tailwindcss": "^4",
+    "tsx": "^4.23.5",
     "typescript": "^5"
   }
 }

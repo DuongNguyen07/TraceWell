@@ -1,0 +1,10 @@
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    # Reads every variable from .env.local into the container.
+    # Copy .env.example → .env.local and fill in your values first.
+    env_file:
+      - .env.local
+    restart: unless-stopped

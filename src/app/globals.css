@@ -224,3 +224,51 @@ h1 em, h2 em, h3 em {
     font-size: 34px;
   }
 }
+
+/* ── Landing page animations ───────────────────────────────────────── */
+
+/* Hero entrance — runs once on page load */
+@keyframes heroIn {
+  from { opacity: 0; transform: translateY(22px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.hero-in {
+  opacity: 0;
+  animation: heroIn 0.7s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* Scroll-triggered fade-up (toggled by IntersectionObserver via AnimateIn) */
+.fade-up {
+  opacity: 0;
+  transform: translateY(28px);
+  transition: opacity 0.55s cubic-bezier(0.22, 1, 0.36, 1),
+              transform 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.fade-up.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-in  { animation: none; opacity: 1; }
+  .fade-up  { opacity: 1; transform: none; transition: none; }
+}
+
+/* Toast notification slide-in */
+@keyframes toastIn {
+  from { transform: translateX(110%); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+.toast-in {
+  animation: toastIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* CTA section gradient */
+.cta-gradient {
+  background: linear-gradient(
+    140deg,
+    oklch(0.52 0.12 185) 0%,
+    oklch(0.40 0.10 200) 45%,
+    oklch(0.24 0.06 248) 100%
+  );
+}

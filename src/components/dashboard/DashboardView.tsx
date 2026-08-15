@@ -1,11 +1,13 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
-import { X, ChevronUp, ChevronDown, Check, Wand2, ArrowRight, Camera, Mic, Heart, MessageSquare } from "lucide-react";
+import { X, ChevronUp, ChevronDown, Check, Wand2, ArrowRight, Camera, Mic, Heart, MessageSquare, Copy, Video, Bell, AlertTriangle } from "lucide-react";
 import HealthChart from "./HealthChart";
 import FamilyResidentView from "./FamilyResidentView";
+import ManagerView from "./ManagerView";
 
 // ================================================================
 // TYPES
@@ -46,6 +48,30 @@ type Diagnosis = {
 };
 
 const PROBLEM_STATUSES: ProblemStatus[] = ["Active", "Chronic", "Resolved" , "Other"];
+
+type NotifType = "care_update" | "wellbeing_concern";
+type InAppNotification = {
+  id: string;
+  patientId: string;
+  patientName: string;
+  message: string;
+  type: NotifType;
+  authorRole: string;
+  timestamp: number;
+  read: boolean;
+};
+
+// Events broadcast via BroadcastChannel (same browser) and SSE (cross-device).
+// Every event carries the FULL data object so receiving clients on other devices
+// can merge it directly into state without needing to read the sender's localStorage.
+// notifId (where present) links the event to the saved InAppNotification so the
+// receiving side can pre-seed seenNotifIds and avoid a duplicate toast from the poll.
+type LiveEvent =
+  | { type: "care_note"; org: string; notifId: string; patientId: string; patientName: string; authorRole: string; preview: string; noteType: string; timestamp: number; note: CareNote }
+  | { type: "wellbeing"; org: string; notifId?: string; patientId: string; patientName: string; authorRole: string; isConcern: boolean; timestamp: number; entry: WellbeingEntry }
+  | { type: "chat"; org: string; patientId: string; patientName: string; authorName: string; authorRole: string; preview: string; timestamp: number; message: ChatMessage }
+  | { type: "referral"; org: string; notifId: string; patientId: string; patientName: string; authorRole: string; toRecipient: string; subject: string; timestamp: number; referral: ReferralNote }
+  | { type: "vitals"; org: string; patientId: string; patientName: string; authorRole: string; timestamp: number; vitals: VitalSigns };
 
 type HealthInfo = {
   allergies: string[];
@@ -119,6 +145,7 @@ type ReferralNote = {
   acknowledged: boolean;
   acknowledgedBy?: string;
   acknowledgedAt?: number;
+  shareCode?: string;
 };
 
 // audience distinguishes the clinical GP letter from the plain-language
@@ -159,7 +186,7 @@ const DEMO_PATIENTS: Record<string, Patient[]> = {
     {
       id: "h1", name: "Amara Chen", age: 68, room: "Ward 3B",
       baseline: { mood: 6, appetite: 6, mobility: 5, sleep: 6 },
-      profile: { preferences: "Prefers tea over coffee; likes the curtain open during the day.", routine: "Usually naps 2–3pm; anxious before scans.", communicationStyle: "Mandarin is first language; prefers written instructions repeated verbally." },
+      profile: { preferences: "Prefers tea over coffee; likes the curtain open during the day.", routine: "Usually naps 2-3pm; anxious before scans.", communicationStyle: "Mandarin is first language; prefers written instructions repeated verbally." },
       medications: [{ id: "m1", name: "Metformin", dose: "500mg", frequency: "Twice daily" }],
       healthInfo: { allergies: ["Penicillin", "Shellfish"], conditions: ["Type 2 diabetes", "Hypertension"], medications: ["Metformin 500mg", "Lisinopril 10mg"], dietaryNotes: "Low-sodium, diabetic diet." },
     },
@@ -182,7 +209,7 @@ const DEMO_PATIENTS: Record<string, Patient[]> = {
     {
       id: "p1", name: "Margaret Wu", age: 82, room: "Room 12B",
       baseline: { mood: 7, appetite: 7, mobility: 6, sleep: 7 },
-      profile: { preferences: "Enjoys gardening chat and classical music; dislikes rushed showers.", routine: "Church call every Sunday morning; tea at 3pm sharp.", communicationStyle: "Mild hearing loss in left ear — approach from the right." },
+      profile: { preferences: "Enjoys gardening chat and classical music; dislikes rushed showers.", routine: "Church call every Sunday morning; tea at 3pm sharp.", communicationStyle: "Mild hearing loss in left ear - approach from the right." },
       medications: [{ id: "m4", name: "Donepezil", dose: "5mg", frequency: "Once daily" }],
       healthInfo: { allergies: ["Sulfa drugs"], conditions: ["Osteoarthritis", "Mild cognitive impairment"], medications: ["Paracetamol PRN", "Donepezil"], dietaryNotes: "Soft-food diet, thickened fluids." },
     },
@@ -196,7 +223,7 @@ const DEMO_PATIENTS: Record<string, Patient[]> = {
     {
       id: "p3", name: "Elsie Campbell", age: 89, room: "Room 14C",
       baseline: { mood: 8, appetite: 6, mobility: 4, sleep: 8 },
-      profile: { preferences: "Loves her dog's photo on the nightstand; prefers female carers for personal care.", routine: "Settles best with the hallway light left on overnight.", communicationStyle: "Mild dementia — short, simple sentences work best; avoid open-ended questions." },
+      profile: { preferences: "Loves her dog's photo on the nightstand; prefers female carers for personal care.", routine: "Settles best with the hallway light left on overnight.", communicationStyle: "Mild dementia - short, simple sentences work best; avoid open-ended questions." },
       medications: [{ id: "m6", name: "Furosemide", dose: "40mg", frequency: "Once daily, morning" }],
       healthInfo: { allergies: ["Penicillin"], conditions: ["Congestive heart failure", "Reduced mobility"], medications: ["Furosemide", "Aspirin 100mg"], dietaryNotes: "Low-salt diet, fluid intake monitored." },
     },
@@ -277,6 +304,26 @@ function saveToStorage<T>(key: string, value: T) {
   }
 }
 
+// Merges two per-patient data dicts, deduplicating by id (if present) or timestamp.
+// Used to combine localStorage data with server-side data on initial load so
+// clients on any device see all data, not just what they stored locally.
+function mergeDataDicts<T extends { id?: string; timestamp?: number }>(
+  local: Record<string, T[]>,
+  server: Record<string, T[]>
+): Record<string, T[]> {
+  const result: Record<string, T[]> = { ...local };
+  for (const [patientId, items] of Object.entries(server)) {
+    const existing = result[patientId] ?? [];
+    const seenIds = new Set(existing.map((x) => x.id).filter((id): id is string => !!id));
+    const seenTs  = new Set(existing.map((x) => x.timestamp).filter((t): t is number => t != null));
+    const extra = (items as T[]).filter((x) =>
+      x.id ? !seenIds.has(x.id) : x.timestamp == null || !seenTs.has(x.timestamp)
+    );
+    result[patientId] = [...existing, ...extra];
+  }
+  return result;
+}
+
 // Fixes patients saved BEFORE the profile/medications/healthInfo fields existed —
 // fills in safe empty defaults so old saved data doesn't crash the UI.
 function normalizePatient(patient: Patient): Patient {
@@ -305,13 +352,20 @@ function normalizeWellbeingByPatient(raw: unknown): Record<string, WellbeingEntr
 
   Object.entries(raw as Record<string, unknown>).forEach(([patientId, value]) => {
     if (Array.isArray(value)) {
-      result[patientId] = (value as Partial<WellbeingEntry>[]).map((entry) => ({
-        mood: entry.mood ?? 5,
-        appetite: entry.appetite ?? 5,
-        mobility: entry.mobility ?? 5,
-        sleep: entry.sleep ?? 5,
-        timestamp: entry.timestamp ?? Date.now(),
-      }));
+      const seen = new Set<number>();
+      result[patientId] = (value as Partial<WellbeingEntry>[])
+        .map((entry) => ({
+          mood: entry.mood ?? 5,
+          appetite: entry.appetite ?? 5,
+          mobility: entry.mobility ?? 5,
+          sleep: entry.sleep ?? 5,
+          timestamp: entry.timestamp ?? Date.now(),
+        }))
+        .filter((entry) => {
+          if (seen.has(entry.timestamp)) return false;
+          seen.add(entry.timestamp);
+          return true;
+        });
     } else if (value && typeof value === "object") {
       const old = value as Baseline;
       result[patientId] = [{ ...old, timestamp: Date.now() }];
@@ -449,6 +503,16 @@ function buildVitalsTableText(vitals: VitalSigns[]): string {
     .join("\n");
 }
 
+// Generates a human-readable referral code: REF-YYYYMMDD-XXXXX
+// Excludes I/O/0/1 to avoid visual confusion when read aloud or printed.
+function generateReferralCode(): string {
+  const d = new Date();
+  const date = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const rand = Array.from({ length: 5 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+  return `REF-${date}-${rand}`;
+}
+
 // Shared helper for reading fetch responses from our own /api routes.
 // Throws a specific, actionable error if the response isn't valid JSON —
 // this is what catches "the route file is missing/misnamed" (which returns
@@ -559,7 +623,8 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
 
   // ---------- Identity, read from the URL set by the login page ----------
   const { data: session } = useSession();
-  const org = orgProp ?? searchParams.get("org") ?? "hospital";
+  // org priority: prop (route-level override) → URL param → session JWT → default
+  const org = orgProp ?? searchParams.get("org") ?? session?.user?.org ?? "hospital";
   const role = roleProp ?? searchParams.get("role") ?? (session?.user?.role?.toLowerCase() ?? "staff");
   const staffName = searchParams.get("name") ?? session?.user?.name ?? "";
 
@@ -572,10 +637,11 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
 
   // Named role flags, checked in several places below to control what's
   // visible. Kept as named booleans (rather than inline role === "..."
-  // checks scattered everywhere) so extending visibility later (e.g. to
-  // Manager) is a one-line change.
-  const isFamilyRole = role === "family" || role === "patient" || role === "family_member";
-  const isDoctorRole = role === "doctor";
+  // checks scattered everywhere) so extending visibility later is a one-line change.
+  const isFamilyRole  = role === "family" || role === "family_member";
+  const isPatientRole = role === "patient";
+  const isDoctorRole  = role === "doctor";
+  const isManagerRole = role === "manager" || role === "admin";
 
   // ---------- Core data state ----------
   const [hydrated, setHydrated] = useState(false);
@@ -591,9 +657,32 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
   const [dischargeSummariesByPatient, setDischargeSummariesByPatient] = useState<Record<string, DischargeSummary[]>>({});
   // Family chat messages per patient — shared thread visible to all family members and staff.
   const [chatMessagesByPatient, setChatMessagesByPatient] = useState<Record<string, ChatMessage[]>>({});
+  // Draft text for the staff-side family chat input (separate from FamilyResidentView's own input).
+  const [staffChatDraft, setStaffChatDraft] = useState("");
+
+  // In-app notifications and alert panel state.
+  const [notifications, setNotifications] = useState<InAppNotification[]>([]);
+  const [notifPanelOpen, setNotifPanelOpen] = useState(false);
+  // Toast pop-ups for notifications arriving from other sessions.
+  const [toasts, setToasts] = useState<InAppNotification[]>([]);
+  // IDs we've already shown (or created ourselves) — prevents re-toasting.
+  const seenNotifIds = useRef<Set<string>>(new Set());
+  // BroadcastChannel for instant cross-tab push (faster than polling).
+  const bcRef = useRef<BroadcastChannel | null>(null);
+  // Stable ref so the async BC handler always reads the latest role/identity/patient state
+  // without needing the useEffect to re-subscribe on every render.
+  const liveCtxRef = useRef({ isFamilyRole: false, isPatientRole: false, displayIdentity: "", patients: [] as Patient[] });
+  // Alert that fires when a wellbeing check has concerning metric drops.
+  const [wellbeingAlert, setWellbeingAlert] = useState<{
+    patientName: string;
+    concerns: { label: string; current: number; baseline: number; delta: number }[];
+  } | null>(null);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selectedPatient = patients.find((p) => p.id === selectedId);
+
+  // Keep the BC handler's context ref current every render so it reads fresh values.
+  liveCtxRef.current = { isFamilyRole, isPatientRole, displayIdentity, patients };
 
   const patientWellbeingHistory = selectedPatient ? wellbeingByPatient[selectedPatient.id] ?? [] : [];
   const latestCheck = patientWellbeingHistory.length > 0 ? patientWellbeingHistory[patientWellbeingHistory.length - 1] : undefined;
@@ -619,6 +708,14 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
   // TypeScript knows about — it's a browser-specific API.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<any>(null);
+  // After recording stops, voiceReviewMode lets the user amend the transcript before saving.
+  const [voiceReviewMode, setVoiceReviewMode] = useState(false);
+
+  // ---------- Camera state ----------
+  const [cameraMenuOpen, setCameraMenuOpen] = useState(false);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const cameraStreamRef = useRef<MediaStream | null>(null);
 
   // ---------- AI feature state (handover, Q&A, family update, discharge) ----------
   const [handoverText, setHandoverText] = useState<string | null>(null);
@@ -654,6 +751,11 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
   const [newPatientAge, setNewPatientAge] = useState("");
   const [newPatientRoom, setNewPatientRoom] = useState("");
 
+  // ---------- Edit-patient form state ----------
+  const [editPatientOpen, setEditPatientOpen] = useState(false);
+  const [editWard, setEditWard] = useState("");
+  const [editAge, setEditAge] = useState("");
+
   // ---------- Profile edit form state ----------
   const [profileEditOpen, setProfileEditOpen] = useState(false);
   const [profileDraft, setProfileDraft] = useState<Profile>(EMPTY_PROFILE);
@@ -665,7 +767,8 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
   const [medFrequency, setMedFrequency] = useState("");
 
   // ---------- Shift History panel state (Doctor only) ----------
-  const [expandedShiftKey, setExpandedShiftKey] = useState<string | null>(null);
+  const [expandedShiftKey, setExpandedShiftKey]           = useState<string | null>(null);
+  const [expandedNurseShiftKey, setExpandedNurseShiftKey] = useState<string | null>(null);
 
   // ---------- Reports & Imaging form state ----------
   const [reportFormOpen, setReportFormOpen] = useState(false);
@@ -712,20 +815,83 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
   // swapping in real data only after mount, achieves.
   // ================================================================
 
+  // Stop any live camera stream when the component unmounts.
+  useEffect(() => {
+    return () => { cameraStreamRef.current?.getTracks().forEach((t) => t.stop()); };
+  }, []);
+
+  // Assign srcObject once the <video> element is in the DOM (cameraOpen → true).
+  // setTimeout(..., 0) is not reliable — the DOM update may not have flushed yet.
+  useEffect(() => {
+    if (cameraOpen && videoRef.current && cameraStreamRef.current) {
+      videoRef.current.srcObject = cameraStreamRef.current;
+      videoRef.current.play().catch(() => {});
+    }
+  }, [cameraOpen]);
+
+  // Family and patient roles: auto-select on mount so the view is never blank.
+  // Patient role tries to match by name first, then falls back to the first in the list.
+  // Family role always selects the first patient (family members see all patients in their org).
+  useEffect(() => {
+    if ((!isFamilyRole && !isPatientRole) || !hydrated || patients.length === 0 || selectedId) return;
+    const match = isPatientRole
+      ? (patients.find((p) => staffName && p.name.toLowerCase() === staffName.toLowerCase()) ?? patients[0])
+      : patients[0];
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSelectedId(match.id);
+  }, [isFamilyRole, isPatientRole, hydrated, patients, staffName, selectedId]);
+
   useEffect(() => {
     if (!org) return;
-    const loadedPatients = loadFromStorage(`tracewell:${org}:patients`, DEMO_PATIENTS[org] ?? []);
-    setPatients(loadedPatients.map(normalizePatient));
+
+    // Load transient data (notes, vitals, wellbeing checks) from localStorage.
+    // These are session-local and not yet synced to the DB.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setWellbeingByPatient(normalizeWellbeingByPatient(loadFromStorage(`tracewell:${org}:wellbeing`, {})));
     setNotesByPatient(loadFromStorage(`tracewell:${org}:notes`, {}));
     setReportsByPatient(loadFromStorage(`tracewell:${org}:reports`, {}));
     setReferralsByPatient(loadFromStorage(`tracewell:${org}:referrals`, {}));
     setVitalsByPatient(loadFromStorage(`tracewell:${org}:vitals`, {}));
     setDiagnosesByPatient(loadFromStorage(`tracewell:${org}:diagnoses`, {}));
-    // Load discharge summaries from their own storage key.
     setDischargeSummariesByPatient(loadFromStorage(`tracewell:${org}:discharge`, {}));
     setChatMessagesByPatient(loadFromStorage(`tracewell:${org}:chat`, {}));
-    setHydrated(true); // signals the save-effects below that it's now safe to save
+    const storedNotifs = loadFromStorage<InAppNotification[]>(`tracewell:${org}:notifications`, []);
+    setNotifications(storedNotifs);
+    // Pre-seed so existing notifications never trigger toast pop-ups
+    storedNotifs.forEach((n) => seenNotifIds.current.add(n.id));
+
+    // Patient list: prefer the DB (single source of truth for identity data).
+    // Fall back to the localStorage cache, then to the built-in demo data,
+    // so the UI is never blank when the DB is not reachable.
+    const cached = loadFromStorage(`tracewell:${org}:patients`, null);
+    if (cached) setPatients((cached as Patient[]).map(normalizePatient));
+    else        setPatients((DEMO_PATIENTS[org] ?? []).map(normalizePatient));
+
+    setHydrated(true);
+
+    // Fetch server-side data to merge with localStorage — this makes cross-device
+    // and cross-browser data visible immediately on load (not just real-time).
+    fetch(`/api/data?org=${org}`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((serverData: Record<string, Record<string, unknown[]>> | null) => {
+        if (!serverData) return;
+        if (serverData.notes)     setNotesByPatient((prev) => mergeDataDicts(prev, serverData.notes as Record<string, CareNote[]>));
+        if (serverData.wellbeing) setWellbeingByPatient((prev) => normalizeWellbeingByPatient(mergeDataDicts(prev, serverData.wellbeing as Record<string, WellbeingEntry[]>)));
+        if (serverData.vitals)    setVitalsByPatient((prev) => mergeDataDicts(prev, serverData.vitals as Record<string, VitalSigns[]>));
+        if (serverData.referrals) setReferralsByPatient((prev) => mergeDataDicts(prev, serverData.referrals as Record<string, ReferralNote[]>));
+        if (serverData.chat)      setChatMessagesByPatient((prev) => mergeDataDicts(prev, serverData.chat as Record<string, ChatMessage[]>));
+        if (serverData.diagnoses) setDiagnosesByPatient((prev) => mergeDataDicts(prev, serverData.diagnoses as Record<string, Diagnosis[]>));
+      })
+      .catch(() => { /* server data unavailable — localStorage is sufficient */ });
+
+    fetch(`/api/patients?org=${org}`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((data: { patients?: Patient[] } | null) => {
+        if (data?.patients && data.patients.length > 0) {
+          setPatients(data.patients.map(normalizePatient));
+        }
+      })
+      .catch(() => { /* DB not available — continue with cached/demo data */ });
   }, [org]);
 
   // Each of these save-effects checks `hydrated` first — without that
@@ -769,6 +935,256 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
     if (hydrated && org) saveToStorage(`tracewell:${org}:chat`, chatMessagesByPatient);
   }, [chatMessagesByPatient, org, hydrated]);
 
+  useEffect(() => {
+    if (hydrated && org) saveToStorage(`tracewell:${org}:notifications`, notifications);
+  }, [notifications, org, hydrated]);
+
+  // ── Live event helpers ────────────────────────────────────────────────────
+  // showLiveToast and applyLiveEvent are called from both BroadcastChannel
+  // (same-browser tabs) and SSE (cross-device). They use liveCtxRef so they
+  // always read fresh role/identity/patient values without stale closures.
+
+  function showLiveToast(t: InAppNotification) {
+    seenNotifIds.current.add(t.id);
+    setToasts((prev) => [...prev, t]);
+    setTimeout(() => setToasts((prev) => prev.filter((x) => x.id !== t.id)), 7000);
+  }
+
+  // Merges a received LiveEvent into state and shows the appropriate toast/bell.
+  // Works for same-browser tabs (BroadcastChannel) and other devices (SSE).
+  function applyLiveEvent(ev: LiveEvent) {
+    const { isFamilyRole, isPatientRole, displayIdentity, patients } = liveCtxRef.current;
+
+    // Never process your own actions.
+    if (ev.authorRole === displayIdentity) return;
+
+    // Merge the full data payload into state and keep localStorage in sync
+    // so the data survives a page refresh on this device too.
+    if (ev.type === "care_note") {
+      setNotesByPatient((prev) => {
+        const existing = prev[ev.patientId] ?? [];
+        if (existing.some((n) => n.id === ev.note.id)) return prev;
+        const updated = { ...prev, [ev.patientId]: [...existing, ev.note] };
+        saveToStorage(`tracewell:${org}:notes`, updated);
+        return updated;
+      });
+    } else if (ev.type === "wellbeing") {
+      setWellbeingByPatient((prev) => {
+        const existing = (prev[ev.patientId] ?? []) as WellbeingEntry[];
+        if (existing.some((e) => e.timestamp === ev.entry.timestamp)) return prev;
+        const updated = { ...prev, [ev.patientId]: [...existing, ev.entry] };
+        saveToStorage(`tracewell:${org}:wellbeing`, updated);
+        return normalizeWellbeingByPatient(updated);
+      });
+    } else if (ev.type === "chat") {
+      setChatMessagesByPatient((prev) => {
+        const existing = prev[ev.patientId] ?? [];
+        if (existing.some((m) => m.id === ev.message.id)) return prev;
+        const updated = { ...prev, [ev.patientId]: [...existing, ev.message] };
+        saveToStorage(`tracewell:${org}:chat`, updated);
+        return updated;
+      });
+    } else if (ev.type === "referral") {
+      setReferralsByPatient((prev) => {
+        const existing = prev[ev.patientId] ?? [];
+        if (existing.some((r) => r.id === ev.referral.id)) return prev;
+        const updated = { ...prev, [ev.patientId]: [...existing, ev.referral] };
+        saveToStorage(`tracewell:${org}:referrals`, updated);
+        return updated;
+      });
+    } else if (ev.type === "vitals") {
+      setVitalsByPatient((prev) => {
+        const existing = prev[ev.patientId] ?? [];
+        if (existing.some((v) => v.id === ev.vitals.id)) return prev;
+        const updated = { ...prev, [ev.patientId]: [...existing, ev.vitals] };
+        saveToStorage(`tracewell:${org}:vitals`, updated);
+        return updated;
+      });
+    }
+
+    // Pre-seed seenNotifIds so the poll doesn't fire a duplicate toast
+    // for the corresponding InAppNotification that was saved to localStorage.
+    const notifId = (ev as { notifId?: string }).notifId;
+    if (notifId) seenNotifIds.current.add(notifId);
+
+    // Notification routing — both bell (persistent) and toast (7-second pop-up).
+    const myPatientIds = new Set(patients.map((p) => p.id));
+
+    if (isFamilyRole || isPatientRole) {
+      // Family / patient: only care about their own patients.
+      if (!myPatientIds.has(ev.patientId)) return;
+
+      let message = "";
+      let notifType: NotifType = "care_update";
+      if (ev.type === "care_note") {
+        const noteType = (ev as Extract<LiveEvent, { type: "care_note" }>).noteType;
+        message = noteType === "family_update"
+          ? `New care update from ${ev.authorRole} for ${ev.patientName}`
+          : `${ev.authorRole} logged a visit for ${ev.patientName}: "${ev.preview}"`;
+      } else if (ev.type === "wellbeing") {
+        notifType = ev.isConcern ? "wellbeing_concern" : "care_update";
+        message = ev.isConcern
+          ? `Wellbeing concern flagged for ${ev.patientName} by ${ev.authorRole}`
+          : `Wellbeing check recorded for ${ev.patientName} by ${ev.authorRole}`;
+      } else if (ev.type === "vitals") {
+        message = `Vitals updated for ${ev.patientName} by ${ev.authorRole}`;
+      } else if (ev.type === "chat") {
+        message = `${(ev as Extract<LiveEvent, { type: "chat" }>).authorName}: "${ev.preview}"`;
+      }
+      if (!message) return;
+
+      const liveNotif: InAppNotification = {
+        id: `live-${ev.type}-${ev.timestamp}`,
+        patientId: ev.patientId, patientName: ev.patientName,
+        message, type: notifType, authorRole: ev.authorRole,
+        timestamp: ev.timestamp, read: false,
+      };
+      seenNotifIds.current.add(liveNotif.id);
+      // Add to bell AND show toast
+      setNotifications((prev) =>
+        prev.some((n) => n.id === liveNotif.id) ? prev : [liveNotif, ...prev]
+      );
+      showLiveToast(liveNotif);
+    } else {
+      // Clinical staff: bell + toast for all cross-user events.
+      let message = "";
+      let notifType: NotifType = "care_update";
+      if (ev.type === "care_note") {
+        message = `${ev.authorRole} logged on ${ev.patientName}: "${ev.preview}"`;
+      } else if (ev.type === "referral") {
+        message = `Referral for ${ev.patientName} from ${ev.authorRole} → ${ev.toRecipient}`;
+      } else if (ev.type === "chat") {
+        message = `${(ev as Extract<LiveEvent, { type: "chat" }>).authorName}: "${ev.preview}" (re: ${ev.patientName})`;
+      } else if (ev.type === "vitals") {
+        message = `Vitals recorded for ${ev.patientName} by ${ev.authorRole}`;
+      } else if (ev.type === "wellbeing") {
+        notifType = ev.isConcern ? "wellbeing_concern" : "care_update";
+        message = ev.isConcern
+          ? `Wellbeing concern for ${ev.patientName} — flagged by ${ev.authorRole}`
+          : `Wellbeing check logged for ${ev.patientName} by ${ev.authorRole}`;
+      }
+      if (!message) return;
+
+      const liveNotif: InAppNotification = {
+        id: `live-${ev.type}-${ev.timestamp}`,
+        patientId: ev.patientId, patientName: ev.patientName,
+        message, type: notifType, authorRole: ev.authorRole,
+        timestamp: ev.timestamp, read: false,
+      };
+      seenNotifIds.current.add(liveNotif.id);
+      setNotifications((prev) =>
+        prev.some((n) => n.id === liveNotif.id) ? prev : [liveNotif, ...prev]
+      );
+      showLiveToast(liveNotif);
+    }
+  }
+
+  // ── Real-time cross-tab sync ────────────────────────────────────────────
+  // BroadcastChannel provides instant push (< 1ms) the moment another tab
+  // writes data. The storage event + 5-second poll stay as a fallback.
+  useEffect(() => {
+    if (!org || !hydrated) return;
+
+    const k = (s: string) => `tracewell:${org}:${s}`;
+
+    // ── BroadcastChannel: instant push to other tabs in the same browser ──
+    // The event payload carries the full data object so no localStorage read
+    // is needed — this is the same merge logic used by the SSE handler.
+    if (typeof BroadcastChannel !== "undefined") {
+      const bc = new BroadcastChannel("tracewell-live");
+      bcRef.current = bc;
+      bc.onmessage = (e: MessageEvent<LiveEvent>) => {
+        if (e.data?.org === org) applyLiveEvent(e.data);
+      };
+    }
+
+    // ── Storage event + poll: fallback for missed BC events ──────────
+    function refreshLiveData() {
+      const newNotes = loadFromStorage<Record<string, CareNote[]>>(k("notes"), {});
+      setNotesByPatient((prev) => JSON.stringify(prev) !== JSON.stringify(newNotes) ? newNotes : prev);
+
+      const newWellbeing = normalizeWellbeingByPatient(loadFromStorage(k("wellbeing"), {}));
+      setWellbeingByPatient((prev) => JSON.stringify(prev) !== JSON.stringify(newWellbeing) ? newWellbeing : prev);
+
+      const newVitals = loadFromStorage<Record<string, VitalSigns[]>>(k("vitals"), {});
+      setVitalsByPatient((prev) => JSON.stringify(prev) !== JSON.stringify(newVitals) ? newVitals : prev);
+
+      const newChat = loadFromStorage<Record<string, ChatMessage[]>>(k("chat"), {});
+      setChatMessagesByPatient((prev) => JSON.stringify(prev) !== JSON.stringify(newChat) ? newChat : prev);
+
+      const newNotifs = loadFromStorage<InAppNotification[]>(k("notifications"), []);
+      setNotifications((prev) => JSON.stringify(prev) !== JSON.stringify(newNotifs) ? newNotifs : prev);
+    }
+
+    const onStorage = (e: StorageEvent) => {
+      if (e.key?.startsWith(`tracewell:${org}:`)) refreshLiveData();
+    };
+    window.addEventListener("storage", onStorage);
+    const poll = setInterval(refreshLiveData, 5000);
+
+    return () => {
+      bcRef.current?.close();
+      bcRef.current = null;
+      window.removeEventListener("storage", onStorage);
+      clearInterval(poll);
+    };
+  // applyLiveEvent reads liveCtxRef.current so it's always current — no re-subscribe needed
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [org, hydrated]);
+
+  // ── SSE: cross-device real-time sync ─────────────────────────────────────
+  // Connects to /api/live so updates on any device push to this client instantly.
+  // Uses the same applyLiveEvent function as BroadcastChannel so behavior is
+  // identical regardless of whether the sender is in the same browser or not.
+  useEffect(() => {
+    if (!org || !hydrated) return;
+
+    const es = new EventSource(`/api/live?org=${encodeURIComponent(org)}`);
+
+    es.onmessage = (e: MessageEvent<string>) => {
+      if (!e.data?.trim() || e.data.trim().startsWith(":")) return;
+      try {
+        const ev = JSON.parse(e.data) as LiveEvent;
+        if (ev.org === org) applyLiveEvent(ev);
+      } catch { /* ignore malformed frames */ }
+    };
+
+    es.onerror = () => {
+    };
+
+    return () => es.close();
+  // applyLiveEvent reads liveCtxRef.current so it's always current — no re-subscribe needed
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [org, hydrated]);
+
+  // ── Toast pop-up detection ────────────────────────────────────────────────
+  // Fires whenever notifications change. Unseen IDs (not in seenNotifIds) that
+  // weren't created by the current user trigger a 6-second toast pop-up.
+  useEffect(() => {
+    if (!hydrated) return;
+
+    const unseen = notifications.filter((n) => !seenNotifIds.current.has(n.id));
+    if (unseen.length === 0) return;
+
+    // Mark immediately so re-renders don't re-trigger
+    unseen.forEach((n) => seenNotifIds.current.add(n.id));
+
+    const visiblePatientIds = new Set(patients.map((p) => p.id));
+    const toShow = unseen.filter((n) => {
+      if (n.authorRole === displayIdentity) return false; // skip own notifications
+      if (isFamilyRole || isPatientRole) return visiblePatientIds.has(n.patientId);
+      return true;
+    });
+
+    if (toShow.length === 0) return;
+
+    const batch = toShow.slice(0, 3);
+    setToasts((prev) => [...prev, ...batch]);
+    batch.forEach((n) => {
+      setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== n.id)), 6000);
+    });
+  }, [notifications, hydrated, displayIdentity, isFamilyRole, isPatientRole, patients]);
+
   // ================================================================
   // DERIVED VALUES
   // ================================================================
@@ -786,6 +1202,38 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
   const shiftGroups = groupNotesByShift(
     patientNotes.filter((n) => n.type === "text" || n.type === "image" || n.type === "voice")
   );
+
+  // Org-wide nurse shift history for the doctor view — all nurse/carer notes
+  // across every patient, grouped by shift, newest-first. Limited to 6 shifts.
+  const nurseShiftGroups: Array<{
+    key: string;
+    label: string;
+    ts: number;
+    nursePts: Record<string, { patientIds: Set<string>; count: number }>;
+  }> = (() => {
+    if (!isDoctorRole) return [];
+    const groups: Record<string, { key: string; label: string; ts: number; nursePts: Record<string, { patientIds: Set<string>; count: number }> }> = {};
+    patients.forEach((p) => {
+      (notesByPatient[p.id] ?? [])
+        .filter((n) => /\b(Nurse|Carer|RN|LPN)\b/i.test(n.authorRole) && (n.type === "text" || n.type === "image" || n.type === "voice"))
+        .forEach((n) => {
+          const period = getShiftPeriod(n.timestamp);
+          if (!groups[period.key]) {
+            groups[period.key] = { key: period.key, label: period.label, ts: n.timestamp, nursePts: {} };
+          } else {
+            groups[period.key].ts = Math.max(groups[period.key].ts, n.timestamp);
+          }
+          if (!groups[period.key].nursePts[n.authorRole]) {
+            groups[period.key].nursePts[n.authorRole] = { patientIds: new Set(), count: 0 };
+          }
+          groups[period.key].nursePts[n.authorRole].patientIds.add(p.id);
+          groups[period.key].nursePts[n.authorRole].count++;
+        });
+    });
+    return Object.values(groups)
+      .sort((a, b) => b.ts - a.ts)
+      .slice(0, 6);
+  })();
 
   const patientReports = selectedPatient ? reportsByPatient[selectedPatient.id] ?? [] : [];
   const sortedReports = [...patientReports].sort((a, b) => b.timestamp - a.timestamp);
@@ -810,6 +1258,24 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
   const sortedDischargeSummaries = [...patientDischargeSummaries].sort((a, b) => b.timestamp - a.timestamp);
 
   // ================================================================
+  // ACTIONS — helpers
+  // ================================================================
+
+  // Sends an event to:
+  //  1. Other tabs in the same browser (BroadcastChannel — instant, no round trip)
+  //  2. All connected clients on any device (SSE via /api/broadcast — cross-device)
+  // The event carries the full data payload so SSE receivers don't need
+  // to access the sender's localStorage (which is browser-local).
+  function broadcast(event: LiveEvent) {
+    bcRef.current?.postMessage(event);
+    fetch("/api/broadcast", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(event),
+    }).catch(() => {/* fire-and-forget — SSE is best-effort */});
+  }
+
+  // ================================================================
   // ACTIONS — Family chat
   // ================================================================
 
@@ -823,10 +1289,19 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
       content,
       timestamp: Date.now(),
     };
-    setChatMessagesByPatient((prev) => ({
-      ...prev,
-      [selectedPatient.id]: [...(prev[selectedPatient.id] ?? []), msg],
-    }));
+    const updatedChat = {
+      ...chatMessagesByPatient,
+      [selectedPatient.id]: [...(chatMessagesByPatient[selectedPatient.id] ?? []), msg],
+    };
+    setChatMessagesByPatient(updatedChat);
+    if (org) saveToStorage(`tracewell:${org}:chat`, updatedChat);
+    broadcast({
+      type: "chat", org,
+      patientId: selectedPatient.id, patientName: selectedPatient.name,
+      authorName: staffName, authorRole: displayIdentity,
+      preview: content.slice(0, 100), timestamp: msg.timestamp,
+      message: msg,
+    });
   }
 
   // ================================================================
@@ -845,11 +1320,56 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
   function saveWellbeingCheck() {
     if (!selectedPatient) return;
     const newEntry: WellbeingEntry = { ...draft, timestamp: Date.now() };
-    setWellbeingByPatient((prev) => ({
-      ...prev,
-      [selectedPatient.id]: [...(prev[selectedPatient.id] ?? []), newEntry],
-    }));
+    const updatedWellbeing = {
+      ...wellbeingByPatient,
+      [selectedPatient.id]: [...(wellbeingByPatient[selectedPatient.id] ?? []), newEntry],
+    };
+    setWellbeingByPatient(updatedWellbeing);
+    // Save before broadcasting so receiving tabs read fresh data.
+    if (org) saveToStorage(`tracewell:${org}:wellbeing`, updatedWellbeing);
     setFormOpen(false);
+
+    // Detect concerning drops against the patient's baseline.
+    const bl = selectedPatient.baseline;
+    const METRIC_LABELS: { key: keyof Baseline; label: string }[] = [
+      { key: "mood",      label: "Mood" },
+      { key: "appetite",  label: "Appetite" },
+      { key: "mobility",  label: "Mobility" },
+      { key: "sleep",     label: "Sleep" },
+    ];
+    const concerns = METRIC_LABELS
+      .map(({ key, label }) => ({ label, current: draft[key], baseline: bl[key], delta: bl[key] - draft[key] }))
+      .filter(({ delta }) => delta >= 1);
+
+    const isConcern = concerns.length > 0;
+    const wellbeingNotifId = isConcern ? crypto.randomUUID() : undefined;
+
+    // Broadcast every wellbeing check so family/patient tabs update instantly.
+    broadcast({
+      type: "wellbeing", org,
+      notifId: wellbeingNotifId,
+      patientId: selectedPatient.id, patientName: selectedPatient.name,
+      authorRole: displayIdentity, isConcern, timestamp: newEntry.timestamp,
+      entry: newEntry,
+    });
+
+    if (isConcern) {
+      setWellbeingAlert({ patientName: selectedPatient.name, concerns });
+      const notif: InAppNotification = {
+        id: wellbeingNotifId!,
+        patientId: selectedPatient.id,
+        patientName: selectedPatient.name,
+        message: `Wellbeing concern flagged for ${selectedPatient.name}: ${concerns.map((c) => `${c.label} ${c.current}/10 (baseline ${c.baseline})`).join(", ")}`,
+        type: "wellbeing_concern",
+        authorRole: displayIdentity,
+        timestamp: Date.now(),
+        read: false,
+      };
+      seenNotifIds.current.add(notif.id);
+      const updatedNotifs = [notif, ...notifications];
+      setNotifications(updatedNotifs);
+      if (org) saveToStorage(`tracewell:${org}:notifications`, updatedNotifs);
+    }
   }
 
   function cancelForm() {
@@ -875,6 +1395,14 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
       return;
     }
     setVoiceError("");
+    setVoiceReviewMode(false);
+
+    // Request mic with noise-suppression constraints to activate hardware-level
+    // noise reduction before the speech API opens the audio device.
+    navigator.mediaDevices?.getUserMedia({
+      audio: { noiseSuppression: true, echoCancellation: true, autoGainControl: true },
+    }).then((s) => s.getTracks().forEach((t) => t.stop())).catch(() => {});
+
     const recognition = new SpeechRecognitionClass();
     recognition.continuous = true;
     recognition.interimResults = true;
@@ -884,7 +1412,12 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
       for (let i = 0; i < event.results.length; i++) transcript += event.results[i][0].transcript;
       setNoteDraft(transcript);
     };
-    recognition.onend = () => setRecording(false);
+    // When recording ends, enter review mode so the user can verify and amend
+    // the transcript before it's saved as a note.
+    recognition.onend = () => {
+      setRecording(false);
+      setVoiceReviewMode(true);
+    };
     // Every possible failure reason gets a specific, readable message
     // instead of failing silently.
     recognition.onerror = (event: any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -909,6 +1442,55 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
   function stopVoice() {
     recognitionRef.current?.stop();
     setRecording(false);
+  }
+
+  // ================================================================
+  // ACTIONS — Camera (take photo)
+  // ================================================================
+
+  async function openCamera() {
+    setCameraMenuOpen(false);
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCaptionError("Camera not available in this browser. Use 'Upload' instead.");
+      return;
+    }
+    try {
+      // Prefer back camera on mobile; fall back to any camera on desktop.
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
+        });
+      } catch {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      }
+      cameraStreamRef.current = stream;
+      setCameraOpen(true);
+      // srcObject is assigned in the useEffect([cameraOpen]) below, which fires
+      // after React has committed the <video> element to the DOM.
+    } catch {
+      setCaptionError("Camera access was denied. Tap 'Upload' to choose a photo from your device instead.");
+    }
+  }
+
+  function capturePhoto() {
+    const video = videoRef.current;
+    // readyState < 2 means the video hasn't decoded a frame yet — drawing it
+    // would produce a blank black canvas.
+    if (!video || video.readyState < 2 || !video.videoWidth) return;
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext("2d")?.drawImage(video, 0, 0);
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+    setPendingImage(dataUrl);
+    closeCamera();
+  }
+
+  function closeCamera() {
+    cameraStreamRef.current?.getTracks().forEach((t) => t.stop());
+    cameraStreamRef.current = null;
+    setCameraOpen(false);
   }
 
   async function addNote() {
@@ -952,13 +1534,43 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
       imageUrl: pendingImage ?? undefined,
     };
 
-    setNotesByPatient((prev) => ({
-      ...prev,
-      [selectedPatient.id]: [...(prev[selectedPatient.id] ?? []), newNote],
-    }));
+    const updatedNotes = {
+      ...notesByPatient,
+      [selectedPatient.id]: [...(notesByPatient[selectedPatient.id] ?? []), newNote],
+    };
+    setNotesByPatient(updatedNotes);
+    // Save before broadcasting so the receiving tab reads fresh notes.
+    if (org) saveToStorage(`tracewell:${org}:notes`, updatedNotes);
+
+    // Broadcast immediately so family/patient tabs pop up a toast in real time.
+    const noteNotifId = crypto.randomUUID();
+    broadcast({
+      type: "care_note", org, notifId: noteNotifId,
+      patientId: selectedPatient.id, patientName: selectedPatient.name,
+      authorRole: displayIdentity, preview: newNote.content.slice(0, 100),
+      noteType: newNote.type, timestamp: newNote.timestamp,
+      note: newNote,
+    });
+
+    // Also persist the notification for the bell panel history.
+    const notif: InAppNotification = {
+      id: noteNotifId,
+      patientId: selectedPatient.id,
+      patientName: selectedPatient.name,
+      message: `New update for ${selectedPatient.name} from ${displayIdentity}: "${newNote.content.slice(0, 80)}${newNote.content.length > 80 ? "…" : ""}"`,
+      type: "care_update",
+      authorRole: displayIdentity,
+      timestamp: Date.now(),
+      read: false,
+    };
+    seenNotifIds.current.add(notif.id);
+    const updatedNotifs = [notif, ...notifications];
+    setNotifications(updatedNotifs);
+    if (org) saveToStorage(`tracewell:${org}:notifications`, updatedNotifs);
 
     setNoteDraft("");
     setPendingImage(null);
+    setVoiceReviewMode(false);
     if (recording) stopVoice();
   }
 
@@ -1008,10 +1620,18 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
     ].some((v) => v !== null);
     if (!hasAnyValue) return;
 
-    setVitalsByPatient((prev) => ({
-      ...prev,
-      [selectedPatient.id]: [...(prev[selectedPatient.id] ?? []), newVitals],
-    }));
+    const updatedVitals = {
+      ...vitalsByPatient,
+      [selectedPatient.id]: [...(vitalsByPatient[selectedPatient.id] ?? []), newVitals],
+    };
+    setVitalsByPatient(updatedVitals);
+    if (org) saveToStorage(`tracewell:${org}:vitals`, updatedVitals);
+    broadcast({
+      type: "vitals", org,
+      patientId: selectedPatient.id, patientName: selectedPatient.name,
+      authorRole: displayIdentity, timestamp: newVitals.timestamp,
+      vitals: newVitals,
+    });
 
     setVitalsSystolic("");
     setVitalsDiastolic("");
@@ -1136,6 +1756,15 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
         ...prev,
         [selectedPatient.id]: [...(prev[selectedPatient.id] ?? []), newNote],
       }));
+
+      broadcast({
+        type: "care_note", org: org!,
+        notifId: `notif-${newNote.id}`,
+        patientId: selectedPatient.id, patientName: selectedPatient.name,
+        authorRole: "TraceWell AI", preview: newNote.content.slice(0, 100),
+        noteType: "family_update", timestamp: newNote.timestamp,
+        note: newNote,
+      });
     } catch (err) {
       console.error("Family update error:", err);
       setFamilyUpdateError(
@@ -1311,6 +1940,31 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
     setSelectedId(newPatient.id);
   }
 
+  function openEditPatient() {
+    if (!selectedPatient) return;
+    setEditWard(selectedPatient.room);
+    setEditAge(String(selectedPatient.age));
+    setEditPatientOpen(true);
+  }
+
+  function saveEditPatient() {
+    if (!selectedPatient) return;
+    const ageNum = parseInt(editAge, 10);
+    setPatients((prev) => prev.map((p) =>
+      p.id === selectedPatient.id
+        ? { ...p, room: editWard.trim() || p.room, age: isNaN(ageNum) || ageNum <= 0 ? p.age : ageNum }
+        : p
+    ));
+    setEditPatientOpen(false);
+  }
+
+  function removePatient() {
+    if (!selectedPatient) return;
+    setPatients((prev) => prev.filter((p) => p.id !== selectedPatient.id));
+    setSelectedId(null);
+    setEditPatientOpen(false);
+  }
+
   function openProfileEdit() {
     if (!selectedPatient) return;
     setProfileDraft(selectedPatient.profile);
@@ -1412,6 +2066,7 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
 
     const newReferral: ReferralNote = {
       id: crypto.randomUUID(),
+      shareCode: generateReferralCode(),
       fromName: displayIdentity,
       toRecipient: referralTo.trim(),
       subject: referralSubject.trim(),
@@ -1420,10 +2075,36 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
       acknowledged: false,
     };
 
-    setReferralsByPatient((prev) => ({
-      ...prev,
-      [selectedPatient.id]: [...(prev[selectedPatient.id] ?? []), newReferral],
-    }));
+    const updatedReferrals = {
+      ...referralsByPatient,
+      [selectedPatient.id]: [...(referralsByPatient[selectedPatient.id] ?? []), newReferral],
+    };
+    setReferralsByPatient(updatedReferrals);
+    if (org) saveToStorage(`tracewell:${org}:referrals`, updatedReferrals);
+
+    // Broadcast to clinical staff tabs instantly; also persist as a notification.
+    const referralNotifId = crypto.randomUUID();
+    broadcast({
+      type: "referral", org, notifId: referralNotifId,
+      patientId: selectedPatient.id, patientName: selectedPatient.name,
+      authorRole: displayIdentity, toRecipient: newReferral.toRecipient,
+      subject: newReferral.subject, timestamp: newReferral.timestamp,
+      referral: newReferral,
+    });
+    const referralNotif: InAppNotification = {
+      id: referralNotifId,
+      patientId: selectedPatient.id,
+      patientName: selectedPatient.name,
+      message: `New referral for ${selectedPatient.name} from ${displayIdentity} to ${newReferral.toRecipient}: "${newReferral.subject}"`,
+      type: "care_update",
+      authorRole: displayIdentity,
+      timestamp: newReferral.timestamp,
+      read: false,
+    };
+    seenNotifIds.current.add(referralNotif.id);
+    const updatedNotifs = [referralNotif, ...notifications];
+    setNotifications(updatedNotifs);
+    if (org) saveToStorage(`tracewell:${org}:notifications`, updatedNotifs);
 
     setReferralTo("");
     setReferralSubject("");
@@ -1478,6 +2159,13 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
       [selectedPatient.id]: [...(prev[selectedPatient.id] ?? []), newDiagnosis],
     }));
 
+    // Persist to DB so other clinical staff see it on load
+    fetch("/api/diagnoses", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...newDiagnosis, patientProfileId: selectedPatient.id }),
+    }).catch(() => {});
+
     setDiagnosisCondition("");
     setDiagnosisStatus("Active");
     setDiagnosisNotes("");
@@ -1522,7 +2210,7 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
   }
 
   function handleSignOut() {
-    signOut({ callbackUrl: "/login" });
+    signOut({ callbackUrl: "/" });
   }
 
   // ================================================================
@@ -1533,12 +2221,94 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
     <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur">
         <div className="container-page flex h-16 items-center justify-between">
-          <div>
-            <div className="font-[var(--font-display)] text-lg text-ink">TraceWell</div>
-            <div className="text-xs text-ink-soft">{facilityName}</div>
+          <div className="flex items-center gap-2.5">
+            <Image
+              src="/TraceWell_Logo_nobg.png"
+              alt="TraceWell logo"
+              width={32}
+              height={32}
+              className="h-8 w-8 object-contain"
+            />
+            <div>
+              <div className="font-[var(--font-display)] text-lg text-ink">TraceWell</div>
+              <div className="text-xs text-ink-soft">{facilityName}</div>
+            </div>
           </div>
           <div className="flex items-center gap-3">
             <span className="chip">{displayIdentity}</span>
+
+            {/* Notification bell */}
+            <div className="relative">
+              <button
+                onClick={() => {
+                  setNotifPanelOpen((o) => !o);
+                  // Mark all as read when panel opens
+                  if (!notifPanelOpen) {
+                    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+                  }
+                }}
+                className="relative rounded-full p-2 text-ink-soft hover:bg-secondary"
+                aria-label="Notifications"
+              >
+                <Bell className="h-5 w-5" />
+                {notifications.filter((n) => !n.read).length > 0 && (
+                  <span className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-white">
+                    {Math.min(notifications.filter((n) => !n.read).length, 9)}
+                  </span>
+                )}
+              </button>
+
+              {notifPanelOpen && (
+                <div className="absolute right-0 top-full z-50 mt-2 w-96 rounded-2xl border border-border bg-card shadow-lift">
+                  <div className="flex items-center justify-between border-b border-border px-4 py-3">
+                    <span className="text-sm font-semibold text-ink">Notifications</span>
+                    <button onClick={() => setNotifPanelOpen(false)} className="text-ink-soft hover:text-ink">
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <div className="max-h-80 overflow-y-auto">
+                    {notifications.length === 0 ? (
+                      <div className="px-4 py-6 text-center text-sm text-ink-soft">No notifications yet.</div>
+                    ) : (
+                      // For family/patient roles, only show notifications for their visible patients.
+                      (() => {
+                        const visiblePatientIds = new Set(patients.map((p) => p.id));
+                        const filtered = (isFamilyRole || isPatientRole)
+                          ? notifications.filter((n) => visiblePatientIds.has(n.patientId))
+                          : notifications;
+                        if (filtered.length === 0) {
+                          return <div className="px-4 py-6 text-center text-sm text-ink-soft">No notifications for your patients.</div>;
+                        }
+                        return filtered.slice(0, 30).map((n) => (
+                          <div key={n.id} className={`border-b border-border px-4 py-3 last:border-0 ${n.read ? "opacity-60" : ""}`}>
+                            <div className="flex items-start gap-2">
+                              <span className={`mt-0.5 shrink-0 rounded-full p-1 ${n.type === "wellbeing_concern" ? "bg-amber-100 text-amber-700" : "bg-teal-soft text-teal"}`}>
+                                {n.type === "wellbeing_concern" ? <AlertTriangle className="h-3 w-3" /> : <Bell className="h-3 w-3" />}
+                              </span>
+                              <div className="min-w-0">
+                                <p className="text-xs text-ink leading-snug">{n.message}</p>
+                                <p className="mt-0.5 text-[10px] text-ink-soft">{new Date(n.timestamp).toLocaleString()}</p>
+                              </div>
+                            </div>
+                          </div>
+                        ));
+                      })()
+                    )}
+                  </div>
+                  {notifications.length > 0 && (
+                    <div className="border-t border-border px-4 py-2">
+                      <button
+                        onClick={() => setNotifications([])}
+                        className="text-xs text-ink-soft hover:text-ink"
+                      >
+                        Clear all
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
             <button onClick={handleSignOut} className="rounded-full px-4 py-2 text-sm text-ink-soft hover:bg-secondary">
               Sign out
             </button>
@@ -1546,19 +2316,59 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
         </div>
       </header>
 
+      {/* Manager dashboard — replaces the entire sidebar + detail layout */}
+      {isManagerRole ? (
+        <ManagerView
+          patients={patients}
+          notesByPatient={notesByPatient}
+          wellbeingByPatient={wellbeingByPatient}
+          vitalsByPatient={vitalsByPatient}
+          diagnosesByPatient={diagnosesByPatient}
+          org={org}
+        />
+      ) : isPatientRole ? (
+        /* Patient view — no sidebar, shows only their own record full-width */
+        <div className="container-page py-6">
+          {selectedPatient ? (
+            <FamilyResidentView
+              patient={selectedPatient}
+              personLabelSingular={personLabelSingular}
+              visibleNotes={visibleNotes}
+              wellbeingHistory={patientWellbeingHistory}
+              chatMessages={chatMessagesByPatient[selectedPatient.id] ?? []}
+              currentUserName={staffName}
+              currentUserRole={displayIdentity}
+              onSendChatMessage={addChatMessage}
+              showChat={false}
+            />
+          ) : (
+            <div className="flex h-40 items-center justify-center text-sm text-ink-soft">
+              Loading your record...
+            </div>
+          )}
+        </div>
+      ) : (
       <div className="container-page flex gap-6 py-6">
         <aside className="w-64 shrink-0 rounded-2xl border border-border bg-card p-4 shadow-soft">
           <div className="mb-3 flex items-center justify-between">
             <span className="eyebrow">{personLabel}</span>
             {!isFamilyRole && (
-              <button onClick={() => setAddPatientOpen(true)} className="text-xs font-medium text-teal hover:underline">
-                + Add
-              </button>
+              <div className="flex items-center gap-2">
+                {selectedPatient && (
+                  <button onClick={openEditPatient} className="text-xs font-medium text-ink-soft hover:underline">
+                    Edit
+                  </button>
+                )}
+                <button onClick={() => setAddPatientOpen(true)} className="text-xs font-medium text-teal hover:underline">
+                  + Add
+                </button>
+              </div>
             )}
           </div>
           <div className="flex flex-col gap-1">
             {patients.map((p) => {
               const isSelected = p.id === selectedId;
+              const latestNote = [...(notesByPatient[p.id] ?? [])].sort((a, b) => b.timestamp - a.timestamp)[0];
               return (
                 <button
                   key={p.id}
@@ -1585,11 +2395,17 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
                     setDischargeError("");
                     setEditingSummaryId(null);
                     setEditSummaryContent("");
+                    setStaffChatDraft("");
                   }}
                   className={`rounded-lg px-3 py-2 text-left transition-colors ${isSelected ? "bg-teal-soft" : "hover:bg-secondary"}`}
                 >
                   <div className="text-sm font-medium text-ink">{p.name}</div>
                   <div className="text-xs text-ink-soft">{p.room} · Age {p.age}</div>
+                  {latestNote && (
+                    <div className="mt-0.5 text-[11px] text-muted-foreground">
+                      Last logged {timeAgo(latestNote.timestamp)}
+                    </div>
+                  )}
                 </button>
               );
             })}
@@ -1741,6 +2557,49 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
                     </div>
                   ) : latestCheck ? (
                     <>
+                      {/* Characterised health matrix — per-metric snapshot vs baseline */}
+                      {(() => {
+                        const metrics = [
+                          { label: "Mood",     cur: latestCheck.mood,     base: selectedPatient.baseline.mood },
+                          { label: "Appetite", cur: latestCheck.appetite, base: selectedPatient.baseline.appetite },
+                          { label: "Mobility", cur: latestCheck.mobility, base: selectedPatient.baseline.mobility },
+                          { label: "Sleep",    cur: latestCheck.sleep,    base: selectedPatient.baseline.sleep },
+                        ];
+                        const overall = metrics.reduce((s, m) => s + m.cur, 0) / 4;
+                        const baseOverall = metrics.reduce((s, m) => s + m.base, 0) / 4;
+                        const overallDelta = overall - baseOverall;
+                        const overallLabel = overallDelta >= 1 ? "Above baseline" : overallDelta >= -0.5 ? "At baseline" : overallDelta >= -2 ? "Below baseline" : "Significantly below baseline";
+                        return (
+                          <div className="mb-4">
+                            <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Health Matrix</div>
+                            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                              {metrics.map(({ label, cur, base }) => {
+                                const delta = cur - base;
+                                const bg = delta >= 0 ? "bg-teal-soft" : delta >= -1 ? "bg-amber-50" : "bg-red-50";
+                                const col = delta >= 0 ? "text-teal" : delta >= -1 ? "text-amber-600" : "text-destructive";
+                                return (
+                                  <div key={label} className={`rounded-lg p-2.5 ${bg}`}>
+                                    <div className="text-xs text-muted-foreground">{label}</div>
+                                    <div className="text-xl font-semibold text-ink">{cur}<span className="text-xs font-normal text-muted-foreground">/10</span></div>
+                                    <div className={`flex items-center gap-0.5 text-xs ${col}`}>
+                                      {delta > 0 ? <ChevronUp size={11} /> : delta < 0 ? <ChevronDown size={11} /> : null}
+                                      {delta > 0 ? "+" : ""}{delta.toFixed(1)} vs baseline
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            <div className="mt-2 flex items-center justify-between rounded-lg border border-border bg-card px-3 py-2">
+                              <span className="text-sm font-medium text-ink">Overall health score</span>
+                              <span className="text-sm font-semibold text-ink">{overall.toFixed(1)}/10</span>
+                              <span className={`text-xs font-medium ${overallDelta >= 0 ? "text-teal" : overallDelta >= -1 ? "text-amber-600" : "text-destructive"}`}>
+                                {overallLabel}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })()}
+
                       <div className="flex flex-col gap-2.5">
                         <WellbeingBar label="Mood" value={latestCheck.mood} baseline={selectedPatient.baseline.mood} />
                         <WellbeingBar label="Appetite" value={latestCheck.appetite} baseline={selectedPatient.baseline.appetite} />
@@ -2063,6 +2922,18 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
                               <div className="mt-0.5 text-xs text-muted-foreground">
                                 From {referral.fromName} <ArrowRight size={10} className="inline" /> To {referral.toRecipient} · {formatDateTime(referral.timestamp)}
                               </div>
+                              {referral.shareCode && (
+                                <div className="mt-1 flex items-center gap-1.5">
+                                  <span className="rounded bg-secondary px-2 py-0.5 font-mono text-xs text-ink">{referral.shareCode}</span>
+                                  <button
+                                    onClick={() => navigator.clipboard?.writeText(referral.shareCode!)}
+                                    className="text-muted-foreground hover:text-teal"
+                                    title="Copy referral code"
+                                  >
+                                    <Copy size={11} />
+                                  </button>
+                                </div>
+                              )}
                               {referral.message && <div className="mt-1.5 text-sm text-ink">{referral.message}</div>}
                               {referral.acknowledged && referral.acknowledgedBy && (
                                 <div className="mt-1.5 text-xs text-muted-foreground">
@@ -2133,9 +3004,81 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
                   </div>
                 )}
 
+                {/* ── Nurse shift history (Doctor only) ─────────────────────────────── */}
+                {isDoctorRole && (
+                  <div className="mt-6 rounded-xl border border-border bg-background p-4">
+                    <div className="mb-1 text-sm font-semibold text-ink">Nurse shift history</div>
+                    <p className="mb-3 text-xs text-muted-foreground">
+                      Nursing and carer activity across all {org === "hospital" ? "patients" : "residents"}, grouped by shift.
+                    </p>
+                    {nurseShiftGroups.length === 0 ? (
+                      <p className="text-sm text-ink-soft">No nurse shift data yet.</p>
+                    ) : (
+                      <div className="flex flex-col gap-1.5">
+                        {nurseShiftGroups.map((group) => {
+                          const isOpen = expandedNurseShiftKey === group.key;
+                          const nurseEntries = Object.entries(group.nursePts);
+                          return (
+                            <div key={group.key} className="rounded-lg border border-border">
+                              <button
+                                onClick={() => setExpandedNurseShiftKey(isOpen ? null : group.key)}
+                                className="flex w-full items-center justify-between px-3 py-2"
+                              >
+                                <span className="text-sm font-medium text-ink">{group.label}</span>
+                                <span className="flex items-center gap-2">
+                                  <span className="rounded-full bg-teal-soft px-2 py-0.5 text-xs text-teal">
+                                    {nurseEntries.length} nurse{nurseEntries.length !== 1 ? "s" : ""}
+                                  </span>
+                                  {isOpen ? <ChevronUp size={14} className="text-muted-foreground" /> : <ChevronDown size={14} className="text-muted-foreground" />}
+                                </span>
+                              </button>
+                              {isOpen && (
+                                <div className="flex flex-col gap-2 px-3 pb-3">
+                                  {nurseEntries
+                                    .sort((a, b) => b[1].count - a[1].count)
+                                    .map(([authorRole, { patientIds, count }]) => {
+                                      const displayName = authorRole.match(/^(.*?)\s*\(.*?\)\s*$/) ? authorRole.match(/^(.*?)\s*\(.*?\)\s*$/)![1].trim() : authorRole;
+                                      return (
+                                        <div key={authorRole} className="rounded-lg border border-border bg-background p-2.5">
+                                          <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-1.5">
+                                              <span className="h-1.5 w-1.5 rounded-full bg-teal" />
+                                              <span className="text-xs font-semibold text-ink">{displayName}</span>
+                                            </div>
+                                            <span className="text-[10px] text-muted-foreground">
+                                              {count} note{count !== 1 ? "s" : ""} · {patientIds.size} {org === "hospital" ? "patient" : "resident"}{patientIds.size !== 1 ? "s" : ""}
+                                            </span>
+                                          </div>
+                                          <div className="mt-1.5 flex flex-wrap gap-1">
+                                            {[...patientIds].map((pid) => {
+                                              const pt = patients.find((p) => p.id === pid);
+                                              return pt ? (
+                                                <button
+                                                  key={pid}
+                                                  onClick={() => setSelectedId(pid)}
+                                                  className="rounded bg-teal-soft px-1.5 py-0.5 text-[10px] text-teal hover:opacity-80"
+                                                >
+                                                  {pt.name}
+                                                </button>
+                                              ) : null;
+                                            })}
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* ================================================================
                      DISCHARGE SUMMARY PANEL — Doctor only.
-                     
+
                      Clicking "Generate draft" creates TWO separate entries at once:
                      one audience="gp" (clinical, for the ongoing GP) and one
                      audience="patient" (plain language, for the patient). Each is
@@ -2346,31 +3289,77 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
                         <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-destructive opacity-75" />
                         <span className="relative inline-flex h-2 w-2 rounded-full bg-destructive" />
                       </span>
-                      Listening — speak now, click the microphone again to stop.
+                      Listening — speak now, click the microphone again to stop. Noise cancellation active.
                     </div>
                   )}
 
-                  <div className="flex gap-2">
-                    <input
-                      value={noteDraft}
-                      onChange={(e) => setNoteDraft(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && addNote()}
-                      placeholder={recording ? "Listening..." : pendingImage ? "Optional additional context..." : "Add a care note..."}
-                      className="flex-1 rounded-lg border border-border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-                    />
-                    <input ref={fileInputRef} type="file" accept="image/*" onChange={handleImageSelect} className="hidden" />
-                    <button onClick={() => fileInputRef.current?.click()} className="rounded-lg border border-border px-3 py-2 text-sm text-ink-soft hover:bg-secondary" title="Attach a photo"><Camera size={16} /></button>
-                    <button
-                      onClick={recording ? stopVoice : startVoice}
-                      className={`rounded-lg border px-3 py-2 text-sm ${recording ? "border-destructive bg-destructive text-white" : "border-border text-ink-soft hover:bg-secondary"}`}
-                      title={recording ? "Stop recording" : "Record a voice note"}
-                    >
-                      <Mic size={16} />
-                    </button>
-                    <button onClick={addNote} disabled={captioning} className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50">
-                      {captioning ? "..." : "Add"}
-                    </button>
-                  </div>
+                  {/* Voice review panel — shown after recording stops so the transcript can be amended */}
+                  {voiceReviewMode && !recording && noteDraft.trim() && (
+                    <div className="mb-3 rounded-lg border border-teal bg-teal-soft p-3">
+                      <div className="mb-1.5 flex items-center justify-between">
+                        <span className="text-xs font-semibold text-teal">Review voice transcript — edit before saving</span>
+                        <button onClick={() => { setNoteDraft(""); setVoiceReviewMode(false); }} className="text-xs text-ink-soft hover:text-destructive">Discard</button>
+                      </div>
+                      <textarea
+                        value={noteDraft}
+                        onChange={(e) => setNoteDraft(e.target.value)}
+                        rows={3}
+                        className="w-full resize-none rounded border border-border bg-card px-2 py-1.5 text-sm text-ink outline-none focus:ring-2 focus:ring-ring"
+                      />
+                      <button onClick={addNote} disabled={captioning} className="mt-2 rounded-full bg-primary px-4 py-1.5 text-xs font-medium text-primary-foreground disabled:opacity-50">
+                        {captioning ? "Saving..." : "Save voice note"}
+                      </button>
+                    </div>
+                  )}
+
+                  {!voiceReviewMode && (
+                    <div className="flex gap-2">
+                      <input
+                        value={noteDraft}
+                        onChange={(e) => setNoteDraft(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && addNote()}
+                        placeholder={recording ? "Listening..." : pendingImage ? "Optional context..." : "Add a care note..."}
+                        className="flex-1 rounded-lg border border-border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                      />
+                      <input ref={fileInputRef} type="file" accept="image/*" onChange={handleImageSelect} className="hidden" />
+                      {/* Camera button with dropdown: Take photo / Upload */}
+                      <div className="relative">
+                        <button
+                          onClick={() => setCameraMenuOpen((v) => !v)}
+                          className="rounded-lg border border-border px-3 py-2 text-sm text-ink-soft hover:bg-secondary"
+                          title="Add photo"
+                        >
+                          <Camera size={16} />
+                        </button>
+                        {cameraMenuOpen && (
+                          <div className="absolute bottom-full right-0 z-20 mb-1 min-w-36 overflow-hidden rounded-lg border border-border bg-card shadow-lift">
+                            <button
+                              onClick={openCamera}
+                              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-ink hover:bg-secondary"
+                            >
+                              <Video size={13} /> Take photo
+                            </button>
+                            <button
+                              onClick={() => { setCameraMenuOpen(false); fileInputRef.current?.click(); }}
+                              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-ink hover:bg-secondary"
+                            >
+                              <Camera size={13} /> Upload file
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        onClick={recording ? stopVoice : startVoice}
+                        className={`rounded-lg border px-3 py-2 text-sm ${recording ? "border-destructive bg-destructive text-white" : "border-border text-ink-soft hover:bg-secondary"}`}
+                        title={recording ? "Stop recording" : "Record a voice note"}
+                      >
+                        <Mic size={16} />
+                      </button>
+                      <button onClick={addNote} disabled={captioning} className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50">
+                        {captioning ? "..." : "Add"}
+                      </button>
+                    </div>
+                  )}
 
                   <div className="mt-4 flex flex-col gap-3">
                     {sortedNotes.length === 0 ? (
@@ -2397,6 +3386,62 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
                     )}
                   </div>
                 </div>
+
+                {/* Family Messages — shared real-time thread between family and all staff */}
+                <div className="mt-6 rounded-xl border border-border bg-background p-4">
+                  <div className="mb-3 flex items-center gap-2">
+                    <MessageSquare className="h-4 w-4 text-teal" />
+                    <span className="text-sm font-semibold text-ink">Family Messages</span>
+                    <span className="ml-auto text-xs text-muted-foreground">Visible to family and all care staff</span>
+                  </div>
+
+                  <div className="flex max-h-64 flex-col gap-2 overflow-y-auto">
+                    {(chatMessagesByPatient[selectedPatient.id] ?? []).length === 0 ? (
+                      <p className="text-sm text-ink-soft">No messages yet. Family members and staff can message here.</p>
+                    ) : (
+                      [...(chatMessagesByPatient[selectedPatient.id] ?? [])].sort((a, b) => a.timestamp - b.timestamp).map((msg) => {
+                        const isMine = msg.authorRole === displayIdentity;
+                        return (
+                          <div key={msg.id} className={`flex flex-col ${isMine ? "items-end" : "items-start"}`}>
+                            <div className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm ${isMine ? "bg-teal text-white" : "bg-secondary text-ink"}`}>
+                              {msg.content}
+                            </div>
+                            <span className="mt-0.5 text-[10px] text-muted-foreground">
+                              {msg.authorName || msg.authorRole} · {timeAgo(msg.timestamp)}
+                            </span>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  <div className="mt-3 flex gap-2">
+                    <input
+                      value={staffChatDraft}
+                      onChange={(e) => setStaffChatDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && staffChatDraft.trim()) {
+                          addChatMessage(staffChatDraft.trim());
+                          setStaffChatDraft("");
+                        }
+                      }}
+                      placeholder="Message family..."
+                      className="flex-1 rounded-lg border border-border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                    />
+                    <button
+                      onClick={() => {
+                        if (staffChatDraft.trim()) {
+                          addChatMessage(staffChatDraft.trim());
+                          setStaffChatDraft("");
+                        }
+                      }}
+                      disabled={!staffChatDraft.trim()}
+                      className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
+                    >
+                      Send
+                    </button>
+                  </div>
+                </div>
               </div>
             )
           ) : (
@@ -2407,6 +3452,34 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
           )}
         </main>
       </div>
+      )} {/* end of non-manager / non-patient layout */}
+
+      {editPatientOpen && selectedPatient && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setEditPatientOpen(false)}>
+          <div onClick={(e) => e.stopPropagation()} className="w-full max-w-sm rounded-2xl border border-border bg-card p-6 shadow-lift">
+            <h2 className="text-lg text-ink">Edit — {selectedPatient.name}</h2>
+            <div className="mt-4 flex flex-col gap-3">
+              <div>
+                <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{org === "hospital" ? "Ward" : "Room"}</label>
+                <input value={editWard} onChange={(e) => setEditWard(e.target.value)} placeholder={org === "hospital" ? "e.g. Ward 4C" : "e.g. Room 09B"} className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring" />
+              </div>
+              <div>
+                <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Age</label>
+                <input value={editAge} onChange={(e) => setEditAge(e.target.value)} type="number" placeholder="Age" onKeyDown={(e) => e.key === "Enter" && saveEditPatient()} className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring" />
+              </div>
+              <div className="mt-1 flex gap-2">
+                <button onClick={saveEditPatient} className="rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Save changes</button>
+                <button onClick={() => setEditPatientOpen(false)} className="rounded-full px-4 py-2 text-sm text-ink-soft hover:bg-secondary">Cancel</button>
+              </div>
+              <div className="border-t border-border pt-3">
+                <button onClick={removePatient} className="text-sm text-destructive hover:underline">
+                  Remove {personLabelSingular} from list
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {addPatientOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setAddPatientOpen(false)}>
@@ -2449,6 +3522,69 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
         </div>
       )}
 
+      {/* Camera modal — live viewfinder with capture button */}
+      {cameraOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={closeCamera}>
+          <div onClick={(e) => e.stopPropagation()} className="flex flex-col items-center gap-4 rounded-2xl border border-border bg-card p-6 shadow-lift">
+            <h2 className="text-lg text-ink">Take a photo</h2>
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className="h-64 w-80 rounded-lg bg-black object-cover"
+            />
+            <div className="flex gap-3">
+              <button
+                onClick={capturePhoto}
+                className="flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground"
+              >
+                <Camera size={14} /> Capture
+              </button>
+              <button onClick={closeCamera} className="rounded-full border border-border px-5 py-2.5 text-sm text-ink-soft hover:bg-secondary">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Wellbeing concern alert modal — fires after saving a concerning check */}
+      {wellbeingAlert && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-sm rounded-2xl border border-amber-300 bg-card p-6 shadow-lift">
+            <div className="mb-3 flex items-center gap-2 text-amber-700">
+              <AlertTriangle className="h-5 w-5 shrink-0" />
+              <span className="font-semibold">Health concern flagged</span>
+            </div>
+            <p className="text-sm text-ink">
+              One or more wellbeing metrics for <strong>{wellbeingAlert.patientName}</strong> are below their personal baseline:
+            </p>
+            <ul className="mt-3 space-y-1.5">
+              {wellbeingAlert.concerns.map((c) => (
+                <li key={c.label} className="flex items-center justify-between rounded-lg bg-amber-50 px-3 py-2 text-sm">
+                  <span className="font-medium text-ink">{c.label}</span>
+                  <span className="text-amber-700">
+                    {c.current}/10 <span className="text-ink-soft">(baseline {c.baseline})</span>
+                    {c.delta >= 2 && <span className="ml-1 rounded-full bg-destructive/10 px-1.5 py-0.5 text-xs font-semibold text-destructive">-{c.delta} critical</span>}
+                    {c.delta === 1 && <span className="ml-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-xs font-semibold text-amber-700">-{c.delta} watch</span>}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-3 text-xs text-ink-soft">
+              The patient and their linked family members have been notified. Consider following up with a clinical assessment.
+            </p>
+            <button
+              onClick={() => setWellbeingAlert(null)}
+              className="mt-4 w-full rounded-full bg-primary py-2 text-sm font-medium text-primary-foreground"
+            >
+              Acknowledge
+            </button>
+          </div>
+        </div>
+      )}
+
       {qaOpen && selectedPatient && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setQaOpen(false)}>
           <div onClick={(e) => e.stopPropagation()} className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-lift">
@@ -2468,6 +3604,36 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
               {qaAnswer && <div className="rounded-lg bg-teal-soft p-3 text-sm text-ink">{qaAnswer}</div>}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ── Toast notifications (cross-session real-time pop-ups) ── */}
+      {toasts.length > 0 && (
+        <div className="pointer-events-none fixed bottom-4 right-4 z-[200] flex flex-col gap-2">
+          {toasts.map((toast) => (
+            <div
+              key={toast.id}
+              className="toast-in pointer-events-auto flex w-80 items-start gap-3 rounded-2xl border border-border bg-card p-4 shadow-lift"
+            >
+              <span className={`mt-0.5 shrink-0 rounded-full p-1.5 ${toast.type === "wellbeing_concern" ? "bg-amber-100 text-amber-700" : "bg-teal-soft text-teal"}`}>
+                {toast.type === "wellbeing_concern"
+                  ? <AlertTriangle className="h-3.5 w-3.5" />
+                  : <Bell className="h-3.5 w-3.5" />}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-semibold text-ink">{toast.patientName}</p>
+                <p className="mt-0.5 line-clamp-2 text-xs leading-snug text-ink-soft">{toast.message}</p>
+                <p className="mt-1 text-[10px] text-muted-foreground">{timeAgo(toast.timestamp)}</p>
+              </div>
+              <button
+                onClick={() => setToasts((prev) => prev.filter((t) => t.id !== toast.id))}
+                className="shrink-0 text-ink-soft hover:text-ink"
+                aria-label="Dismiss"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ))}
         </div>
       )}
     </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { signIn, getSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import type { Role } from "@prisma/client";
@@ -43,7 +44,7 @@ export default function LoginPage() {
     setError("");
     setLoading(true);
 
-    const result = await signIn("credentials", { email, password, redirect: false });
+    const result = await signIn("credentials", { email, password, org: orgType, redirect: false });
 
     if (result?.error) {
       setError("Invalid email or password.");
@@ -52,7 +53,7 @@ export default function LoginPage() {
     }
 
     const session = await getSession();
-    const role = (session?.user as any)?.role as Role | undefined;
+    const role = session?.user?.role as Role | undefined;
     const basePath = role ? (ROLE_PATHS[role] ?? "/") : "/";
     router.push(`${basePath}?org=${orgType}`);
   }
@@ -62,7 +63,10 @@ export default function LoginPage() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background p-6">
         <div className="w-full max-w-2xl rounded-2xl border border-border bg-card p-8 shadow-soft">
-          <p className="eyebrow mb-2">TraceWell</p>
+          <div className="mb-4 flex items-center gap-2">
+            <Image src="/TraceWell_Logo_nobg.png" alt="TraceWell logo" width={32} height={32} className="h-8 w-8 object-contain" />
+            <span className="font-[var(--font-display)] text-xl text-ink">TraceWell</span>
+          </div>
           <h1 className="text-2xl">Select your organisation type</h1>
           <p className="mt-1 text-ink-soft">
             You&apos;ll sign in with your individual credentials next.
@@ -107,6 +111,10 @@ export default function LoginPage() {
         <button onClick={goBack} className="mb-4 text-sm text-ink-soft hover:text-ink">
           ← Back
         </button>
+        <div className="mb-4 flex items-center gap-2">
+          <Image src="/TraceWell_Logo_nobg.png" alt="TraceWell logo" width={28} height={28} className="h-7 w-7 object-contain" />
+          <span className="font-[var(--font-display)] text-lg text-ink">TraceWell</span>
+        </div>
         <p className="eyebrow mb-2">
           {orgType === "hospital" ? "Hospital" : "Aged Care"}
         </p>
@@ -141,13 +149,27 @@ export default function LoginPage() {
           </button>
         </div>
 
-        <div className="mt-6 rounded-lg bg-muted p-3 font-mono text-xs text-muted-foreground space-y-1">
-          <div className="font-semibold not-mono text-xs mb-1 font-sans">Demo accounts:</div>
-          <div>nurse@tracewell.demo · nurse123</div>
-          <div>doctor@tracewell.demo · doctor123</div>
-          <div>patient@tracewell.demo · patient123</div>
-          <div>family@tracewell.demo · family123</div>
-          <div>manager@tracewell.demo · manager123</div>
+        <div className="mt-6 rounded-lg bg-muted p-3 font-mono text-xs text-muted-foreground space-y-2">
+          <div className="font-sans font-semibold text-xs text-ink mb-1">Demo accounts</div>
+          {orgType === "hospital" ? (
+            <>
+              <div className="font-sans text-[10px] uppercase tracking-wide text-muted-foreground mb-0.5">St Peter&apos;s Hospital</div>
+              <div>sarah.jones@stpetershospital.com · nurse123</div>
+              <div>dr.chen@stpetershospital.com · doctor123</div>
+              <div>p.walsh@stpetershospital.com · manager123</div>
+              <div>amara.chen@stpetershospital.com · patient123</div>
+              <div>lena.chen@gmail.com · family123</div>
+            </>
+          ) : (
+            <>
+              <div className="font-sans text-[10px] uppercase tracking-wide text-muted-foreground mb-0.5">Sunrise Aged Care</div>
+              <div>mary.nguyen@sunriseagedcare.com.au · nurse123</div>
+              <div>dr.patel@sunriseagedcare.com.au · doctor123</div>
+              <div>j.wilson@sunriseagedcare.com.au · manager123</div>
+              <div>margaret.wu@sunriseagedcare.com.au · patient123</div>
+              <div>tom.wu@gmail.com · family123</div>
+            </>
+          )}
         </div>
       </div>
     </div>

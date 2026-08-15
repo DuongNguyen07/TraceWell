@@ -5,13 +5,15 @@ import { useMemo, useState } from "react";
 type Baseline = { mood: number; appetite: number; mobility: number; sleep: number };
 type WellbeingEntry = Baseline & { timestamp: number };
 type MetricKey = keyof Baseline;
+type AllKey = MetricKey | "overall";
 type Granularity = "daily" | "weekly" | "monthly";
 
-const METRICS: { key: MetricKey; label: string; color: string }[] = [
+const METRICS: { key: AllKey; label: string; color: string; dashed?: boolean }[] = [
   { key: "mood",      label: "Mood",      color: "#2f8f8a" },
   { key: "appetite",  label: "Appetite",  color: "#c98a2b" },
   { key: "mobility",  label: "Mobility",  color: "#4a6fd1" },
   { key: "sleep",     label: "Sleep",     color: "#9457c9" },
+  { key: "overall",   label: "Overall",   color: "#64748b", dashed: true },
 ];
 
 const GRANULARITIES: { key: Granularity; label: string }[] = [
@@ -20,8 +22,13 @@ const GRANULARITIES: { key: Granularity; label: string }[] = [
   { key: "monthly", label: "Monthly" },
 ];
 
-const WIDTH = 640, HEIGHT = 240;
-const PAD_LEFT = 32, PAD_RIGHT = 16, PAD_TOP = 16, PAD_BOTTOM = 28;
+const WIDTH = 640, HEIGHT = 260;
+const PAD_LEFT = 32, PAD_RIGHT = 16, PAD_TOP = 16, PAD_BOTTOM = 36;
+
+function getVal(entry: WellbeingEntry, key: AllKey): number {
+  if (key === "overall") return (entry.mood + entry.appetite + entry.mobility + entry.sleep) / 4;
+  return entry[key as MetricKey];
+}
 
 function weekKey(date: Date): string {
   const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
@@ -40,11 +47,23 @@ function formatShortDate(ts: number): string {
   return new Date(ts).toLocaleString("en-AU", { day: "numeric", month: "short" });
 }
 
+function formatTime(ts: number): string {
+  return new Date(ts).toLocaleString("en-AU", { hour: "numeric", minute: "2-digit", hour12: true });
+}
+
 function formatDateTime(ts: number): string {
   return new Date(ts).toLocaleString("en-AU", {
     day: "numeric", month: "short", year: "numeric",
     hour: "numeric", minute: "2-digit", hour12: true,
   });
+}
+
+// X-axis label: show time if another entry shares the same calendar day.
+function xAxisLabel(i: number, entries: WellbeingEntry[]): string {
+  const d = new Date(entries[i].timestamp);
+  const dateStr = d.toDateString();
+  const sameDayExists = entries.some((e, j) => j !== i && new Date(e.timestamp).toDateString() === dateStr);
+  return sameDayExists ? formatTime(entries[i].timestamp) : formatShortDate(entries[i].timestamp);
 }
 
 function aggregate(history: WellbeingEntry[], granularity: Granularity): WellbeingEntry[] {
@@ -76,7 +95,7 @@ function aggregate(history: WellbeingEntry[], granularity: Granularity): Wellbei
 }
 
 export default function HealthChart({ history, baseline }: { history: WellbeingEntry[]; baseline: Baseline }) {
-  const [hidden, setHidden] = useState<Set<MetricKey>>(new Set());
+  const [hidden, setHidden] = useState<Set<AllKey>>(new Set());
   const [granularity, setGranularity] = useState<Granularity>("daily");
   const sorted = useMemo(() => aggregate(history, granularity), [history, granularity]);
 
@@ -113,36 +132,65 @@ export default function HealthChart({ history, baseline }: { history: WellbeingE
   const yFor = (v: number) => PAD_TOP + plotHeight - (v / 10) * plotHeight;
   const labelStep = Math.max(1, Math.ceil(sorted.length / 6));
 
-  function toggleMetric(key: MetricKey) {
-    setHidden((prev) => { const next = new Set(prev); next.has(key) ? next.delete(key) : next.add(key); return next; });
+  function toggleMetric(key: AllKey) {
+    setHidden((prev) => { const next = new Set(prev); if (next.has(key)) next.delete(key); else next.add(key); return next; });
   }
+
+  // Overall baseline for the reference line (average of 4 metric baselines)
+  const baselineOverall = (baseline.mood + baseline.appetite + baseline.mobility + baseline.sleep) / 4;
 
   return (
     <div>
       {granularityPicker}
 
       <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} className="w-full" role="img" aria-label="Wellbeing history chart">
+        {/* Grid lines + y-axis labels */}
         {[0, 5, 10].map((v) => (
           <g key={v}>
             <line x1={PAD_LEFT} x2={WIDTH - PAD_RIGHT} y1={yFor(v)} y2={yFor(v)} stroke="var(--color-border)" strokeWidth={1} />
             <text x={4} y={yFor(v) + 4} fontSize={10} fill="var(--color-muted-foreground)">{v}</text>
           </g>
         ))}
+
+        {/* X-axis labels — date OR time depending on same-day grouping */}
         {sorted.map((entry, i) =>
           i % labelStep === 0 ? (
-            <text key={entry.timestamp} x={xFor(i)} y={HEIGHT - 8} fontSize={10} textAnchor="middle" fill="var(--color-muted-foreground)">
+            <text key={entry.timestamp} x={xFor(i)} y={HEIGHT - 20} fontSize={9} textAnchor="middle" fill="var(--color-muted-foreground)">
               {formatShortDate(entry.timestamp)}
             </text>
           ) : null
         )}
+        {sorted.map((entry, i) =>
+          i % labelStep === 0 ? (
+            <text key={`t-${entry.timestamp}`} x={xFor(i)} y={HEIGHT - 8} fontSize={8} textAnchor="middle" fill="var(--color-muted-foreground)" opacity={0.7}>
+              {xAxisLabel(i, sorted) !== formatShortDate(entry.timestamp) ? xAxisLabel(i, sorted) : ""}
+            </text>
+          ) : null
+        )}
+
+        {/* Metric lines */}
         {METRICS.filter((m) => !hidden.has(m.key)).map((metric) => {
-          const points = sorted.map((e, i) => `${xFor(i)},${yFor(e[metric.key])}`).join(" ");
+          const values = sorted.map((e) => getVal(e, metric.key));
+          const points = values.map((v, i) => `${xFor(i)},${yFor(v)}`).join(" ");
+          const baseVal = metric.key === "overall" ? baselineOverall : baseline[metric.key as MetricKey];
           return (
             <g key={metric.key}>
-              <polyline points={points} fill="none" stroke={metric.color} strokeWidth={2} />
+              {/* Baseline reference line (dashed, faint) */}
+              <line
+                x1={PAD_LEFT} x2={WIDTH - PAD_RIGHT}
+                y1={yFor(baseVal)} y2={yFor(baseVal)}
+                stroke={metric.color} strokeWidth={0.8} strokeDasharray="3 4" opacity={0.35}
+              />
+              <polyline
+                points={points}
+                fill="none"
+                stroke={metric.color}
+                strokeWidth={metric.dashed ? 2.5 : 2}
+                strokeDasharray={metric.dashed ? "8 4" : undefined}
+              />
               {sorted.map((e, i) => (
-                <circle key={e.timestamp} cx={xFor(i)} cy={yFor(e[metric.key])} r={3} fill={metric.color}>
-                  <title>{metric.label}: {e[metric.key]}/10 · {formatDateTime(e.timestamp)}</title>
+                <circle key={e.timestamp} cx={xFor(i)} cy={yFor(getVal(e, metric.key))} r={3} fill={metric.color}>
+                  <title>{metric.label}: {getVal(e, metric.key).toFixed(1)}/10 · {formatDateTime(e.timestamp)}</title>
                 </circle>
               ))}
             </g>
@@ -150,20 +198,33 @@ export default function HealthChart({ history, baseline }: { history: WellbeingE
         })}
       </svg>
 
+      {/* Legend / metric toggles */}
       <div className="mt-2 flex flex-wrap gap-3">
-        {METRICS.map((metric) => (
-          <button
-            key={metric.key}
-            onClick={() => toggleMetric(metric.key)}
-            className={`flex items-center gap-1.5 rounded-full px-2 py-1 text-xs transition-opacity ${hidden.has(metric.key) ? "opacity-40" : ""}`}
-            title={`Baseline: ${baseline[metric.key]}/10`}
-          >
-            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: metric.color }} />
-            <span className="text-ink-soft">
-              {metric.label} <span className="text-muted-foreground">(baseline {baseline[metric.key]})</span>
-            </span>
-          </button>
-        ))}
+        {METRICS.map((metric) => {
+          const baseVal = metric.key === "overall" ? baselineOverall : baseline[metric.key as MetricKey];
+          return (
+            <button
+              key={metric.key}
+              onClick={() => toggleMetric(metric.key)}
+              className={`flex items-center gap-1.5 rounded-full px-2 py-1 text-xs transition-opacity ${hidden.has(metric.key) ? "opacity-35" : ""}`}
+              title={`Baseline: ${metric.key === "overall" ? baselineOverall.toFixed(1) : baseVal}/10`}
+            >
+              <span
+                className="inline-block h-2 w-4"
+                style={metric.dashed
+                  ? { borderTop: `2px dashed ${metric.color}`, marginTop: 4 }
+                  : { backgroundColor: metric.color, borderRadius: 9999 }
+                }
+              />
+              <span className="text-ink-soft">
+                {metric.label}
+                {metric.key !== "overall" && (
+                  <span className="text-muted-foreground"> (baseline {baseVal})</span>
+                )}
+              </span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );

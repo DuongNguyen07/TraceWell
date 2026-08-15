@@ -17,154 +17,257 @@ enum Role {
   ADMIN
 }
 
-enum NoteType {
-  CAMERA_UPLOAD
-  CAMERA_TAKE_PICTURE
-  HANDOVER_TEXTBOX
-  VOICE_TRANSCRIPTION
+// Matches the four input methods in the care-note form.
+enum CareNoteType {
+  TEXT
+  IMAGE
+  VOICE
+  FAMILY_UPDATE
 }
 
-enum AlertType {
-  MISSING_DATA
-  WELLBEING_CHANGE
-  HIGH_RISK //Red_colour
-  MEDICATION
-  DISCHARGE_PATIENT
+// Mirrors the app's ProblemStatus union — keeps the full clinical history
+// (a Resolved entry is never deleted, just re-labelled).
+enum DiagnosisStatus {
+  ACTIVE
+  CHRONIC
+  RESOLVED
+  OTHER
 }
 
-enum AlertSeverity {
-  LOW
-  MEDIUM
-  HIGH
+// Two distinct audiences for a discharge summary: the GP letter and the
+// plain-language patient-facing version.
+enum DischargeAudience {
+  GP
+  PATIENT
 }
 
-// ─── Models ─────────────────────────────────────────────────────────────────
+enum DischargeSummaryStatus {
+  DRAFT
+  FINALIZED
+}
+
+// ─── Core identity ───────────────────────────────────────────────────────────
 
 model User {
   id        String   @id @default(cuid())
   email     String   @unique
   name      String
   role      Role
+  // "hospital" | "agedcare" — which facility this account belongs to.
+  // Stored here so the JWT callback can read it from the DB rather than
+  // relying purely on the login-form credential.
+  org       String   @default("hospital")
   password  String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   // Relations
-  patientProfile   PatientProfile?  @relation("PatientUser")
-  assignedPatients PatientProfile[] @relation("AssignedClinician")
-  familyLinks      FamilyLink[]     @relation("FamilyMember")
-  nursingNotes     NursingNote[]
-  auditLogs        AuditLog[]
-  notifications    Notification[]
+  patientProfile PatientProfile? @relation("PatientUser")
+  familyLinks    FamilyLink[]    @relation("FamilyMember")
+  careNotes      CareNote[]
+  referrals      ReferralNote[]  @relation("ReferralAuthor")
+  auditLogs      AuditLog[]
 }
 
 model PatientProfile {
-  id          String   @id @default(cuid())
-  userId      String   @unique
+  id          String    @id @default(cuid())
+  userId      String    @unique
+  org         String    // "hospital" | "agedcare"
   dateOfBirth DateTime?
+  // Full ward/room label, e.g. "Ward 3B" or "Room 12B".
+  // A single field is enough — roomNumber was a redundant duplicate.
   ward        String?
-  roomNumber  String?
-  diagnosis   String?
   allergies   String[]
-  preferences Json?    // personalised care preferences
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  // { mood, appetite, mobility, sleep } each 1–10 — the personal baseline
+  // that wellbeing scores are compared against to detect concern flags.
+  baseline    Json      @default("{\"mood\":5,\"appetite\":5,\"mobility\":5,\"sleep\":5}")
+  // { preferences, routine, communicationStyle } free-text care preferences.
+  profile     Json      @default("{}")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   // Relations
-  user              User             @relation("PatientUser", fields: [userId], references: [id], onDelete: Cascade)
-  assignedClinician User?            @relation("AssignedClinician", fields: [clinicianId], references: [id])
-  clinicianId       String?
-  healthRecords     HealthRecord[]
-  nursingNotes      NursingNote[]
-  familyLinks       FamilyLink[]
-  alerts            Alert[]
-}
-
-model HealthRecord {
-  id               String   @id @default(cuid())
-  patientProfileId String
-  recordedAt       DateTime @default(now())
-  symptoms         String[]
-  mood             Int?     // 1–10 scale
-  sleepHours       Float?
-  energyLevel      Int?     // 1–10 scale
-  painLevel        Int?     // 1–10 scale
-  notes            String?
-  createdAt        DateTime @default(now())
-
-  // Relations
-  patientProfile PatientProfile @relation(fields: [patientProfileId], references: [id], onDelete: Cascade)
-}
-
-model NursingNote {
-  id               String   @id @default(cuid())
-  patientProfileId String
-  authorId         String
-  type             NoteType
-  rawContent       String   // original voice transcript or typed note
-  structuredNote   String?  // AI-generated structured version
-  aiSummary        String?  // AI-generated handover summary
-  audioUrl         String?  // link to stored audio if voice note
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-
-  // Relations
-  patientProfile PatientProfile @relation(fields: [patientProfileId], references: [id], onDelete: Cascade)
-  author         User           @relation(fields: [authorId], references: [id])
+  user               User               @relation("PatientUser", fields: [userId], references: [id], onDelete: Cascade)
+  familyLinks        FamilyLink[]
+  diagnoses          Diagnosis[]
+  medications        Medication[]
+  careNotes          CareNote[]
+  wellbeingChecks    WellbeingCheck[]
+  vitals             VitalSigns[]
+  referrals          ReferralNote[]
+  dischargeSummaries DischargeSummary[]
+  chatMessages       ChatMessage[]
+  reports            MedicalReport[]
+  auditLogs          AuditLog[]
 }
 
 model FamilyLink {
   id               String   @id @default(cuid())
   familyMemberId   String
   patientProfileId String
-  relationship     String   // e.g. "parent", "spouse"
-  canViewRecords   Boolean  @default(false)
-  canViewSummaries Boolean  @default(true)
+  relationship     String   // "daughter", "son", "spouse", etc.
   createdAt        DateTime @default(now())
 
-  // Relations
   familyMember   User           @relation("FamilyMember", fields: [familyMemberId], references: [id], onDelete: Cascade)
   patientProfile PatientProfile @relation(fields: [patientProfileId], references: [id], onDelete: Cascade)
 
   @@unique([familyMemberId, patientProfileId])
 }
 
-model Alert {
-  id               String        @id @default(cuid())
-  patientProfileId String
-  type             AlertType
-  severity         AlertSeverity
-  message          String
-  isRead           Boolean       @default(false)
-  resolvedAt       DateTime?
-  createdAt        DateTime      @default(now())
+// ─── Patient clinical data ───────────────────────────────────────────────────
 
-  // Relations
+model Diagnosis {
+  id               String          @id @default(cuid())
+  patientProfileId String
+  condition        String
+  status           DiagnosisStatus @default(ACTIVE)
+  notes            String?
+  authorRole       String          // display identity of the clinician, e.g. "Dr. Chen (Doctor)"
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
   patientProfile PatientProfile @relation(fields: [patientProfileId], references: [id], onDelete: Cascade)
 }
 
-model Notification {
-  id        String   @id @default(cuid())
-  userId    String
-  title     String
-  message   String
-  isRead    Boolean  @default(false)
-  link      String?
-  createdAt DateTime @default(now())
+model Medication {
+  id               String   @id @default(cuid())
+  patientProfileId String
+  name             String
+  dose             String
+  frequency        String
+  createdAt        DateTime @default(now())
 
-  // Relations
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  patientProfile PatientProfile @relation(fields: [patientProfileId], references: [id], onDelete: Cascade)
 }
 
-model AuditLog {
-  id         String   @id @default(cuid())
-  userId     String
-  action     String   // e.g. "VIEW_PATIENT", "CREATE_NOTE", "UPDATE_RECORD"
-  resourceId String?
-  metadata   Json?
-  ipAddress  String?
-  createdAt  DateTime @default(now())
+// Replaces the old NursingNote model, which used a different type enum and
+// didn't map to how the dashboard actually stores notes.
+model CareNote {
+  id               String       @id @default(cuid())
+  patientProfileId String
+  authorId         String
+  // Full display identity, e.g. "Sarah Jones (Nurse)".
+  // Redundant with authorId but stored here so readers never need a join
+  // just to display who wrote a note.
+  authorRole       String
+  type             CareNoteType @default(TEXT)
+  content          String
+  imageUrl         String?
+  // Sensitive notes are hidden from the family/patient view.
+  sensitive        Boolean      @default(false)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
 
-  // Relations
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  patientProfile PatientProfile @relation(fields: [patientProfileId], references: [id], onDelete: Cascade)
+  author         User           @relation(fields: [authorId], references: [id])
+}
+
+// Replaces HealthRecord — the fields now match the four-axis wellbeing model
+// the dashboard actually logs and charts (mood, appetite, mobility, sleep).
+model WellbeingCheck {
+  id               String   @id @default(cuid())
+  patientProfileId String
+  mood             Int      // 1–10
+  appetite         Int      // 1–10
+  mobility         Int      // 1–10
+  sleep            Int      // 1–10
+  recordedAt       DateTime @default(now())
+
+  patientProfile PatientProfile @relation(fields: [patientProfileId], references: [id], onDelete: Cascade)
+}
+
+model VitalSigns {
+  id               String   @id @default(cuid())
+  patientProfileId String
+  authorRole       String
+  systolic         Int?     // mmHg
+  diastolic        Int?     // mmHg
+  heartRate        Int?     // bpm
+  temperature      Float?   // °C
+  oxygenSaturation Float?   // %
+  respiratoryRate  Int?     // breaths/min
+  recordedAt       DateTime @default(now())
+
+  patientProfile PatientProfile @relation(fields: [patientProfileId], references: [id], onDelete: Cascade)
+}
+
+model ReferralNote {
+  id               String    @id @default(cuid())
+  patientProfileId String
+  authorId         String
+  fromName         String
+  toRecipient      String    // free text — department, specialty, or named clinician
+  subject          String
+  message          String
+  acknowledged     Boolean   @default(false)
+  acknowledgedBy   String?
+  acknowledgedAt   DateTime?
+  // Optional share code so the referral can be viewed without logging in
+  // (e.g. sent to an external specialist).
+  shareCode        String?   @unique
+  createdAt        DateTime  @default(now())
+
+  patientProfile PatientProfile @relation(fields: [patientProfileId], references: [id], onDelete: Cascade)
+  author         User           @relation("ReferralAuthor", fields: [authorId], references: [id])
+}
+
+model DischargeSummary {
+  id               String                 @id @default(cuid())
+  patientProfileId String
+  audience         DischargeAudience
+  content          String
+  generatedBy      String                 // display identity of the author
+  status           DischargeSummaryStatus @default(DRAFT)
+  finalizedBy      String?
+  finalizedAt      DateTime?
+  // True if a clinician has manually edited the AI-generated draft.
+  edited           Boolean                @default(false)
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+
+  patientProfile PatientProfile @relation(fields: [patientProfileId], references: [id], onDelete: Cascade)
+}
+
+// Shared family-staff message thread, one per patient.
+model ChatMessage {
+  id               String   @id @default(cuid())
+  patientProfileId String
+  authorName       String
+  // Full display identity, e.g. "Lena Chen (Family)".
+  authorRole       String
+  content          String
+  createdAt        DateTime @default(now())
+
+  patientProfile PatientProfile @relation(fields: [patientProfileId], references: [id], onDelete: Cascade)
+}
+
+model MedicalReport {
+  id               String   @id @default(cuid())
+  patientProfileId String
+  title            String
+  // "Blood Test" | "CT Scan" | "MRI" | "X-Ray" | "Other"
+  type             String
+  content          String?
+  imageUrl         String?
+  authorRole       String
+  createdAt        DateTime @default(now())
+
+  patientProfile PatientProfile @relation(fields: [patientProfileId], references: [id], onDelete: Cascade)
+}
+
+// ─── Compliance ──────────────────────────────────────────────────────────────
+
+// Kept for compliance/auditing — every sensitive action (view patient record,
+// create note, generate AI summary) should write an entry here.
+model AuditLog {
+  id               String   @id @default(cuid())
+  userId           String
+  patientProfileId String?  // null for non-patient actions (e.g. login)
+  action           String   // "VIEW_PATIENT" | "CREATE_NOTE" | "GENERATE_HANDOVER" | etc.
+  metadata         Json?
+  ipAddress        String?
+  createdAt        DateTime @default(now())
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  patientProfile PatientProfile? @relation(fields: [patientProfileId], references: [id], onDelete: SetNull)
 }

@@ -30,8 +30,12 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
-.env*
+# env files — real secrets are never committed; .env.example IS committed as a template
+.env
+.env.local
+.env.production
+.env.development
+.env.test
 
 # vercel
 .vercel
@@ -39,11 +43,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
-
-# Environment files — never commit real secrets
-.env
-.env.local
-.env.production
 
 # Prisma generated
 node_modules/.prisma

@@ -13,7 +13,7 @@ const ROLE_ROUTES: Record<string, Role[]> = {
 export default withAuth(
   function middleware(req) {
     const pathname = req.nextUrl.pathname
-    const role = (req.nextauth.token as any)?.role as Role | undefined
+    const role = req.nextauth.token?.role as Role | undefined
 
     for (const [route, allowedRoles] of Object.entries(ROLE_ROUTES)) {
       if (pathname.startsWith(route) && role && !allowedRoles.includes(role)) {

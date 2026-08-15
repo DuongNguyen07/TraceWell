@@ -1,8 +1,11 @@
+// Legacy endpoint — superseded by /api/broadcast + /api/data which persist
+// care notes via the CareNote model. Redirected to the new model.
+
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import type { NursingNoteInput } from '@/types'
+import { CareNoteType } from '@prisma/client'
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions)
@@ -11,7 +14,7 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const patientProfileId = searchParams.get('patientProfileId')
 
-  const notes = await prisma.nursingNote.findMany({
+  const notes = await prisma.careNote.findMany({
     where: patientProfileId ? { patientProfileId } : undefined,
     include: { author: { select: { name: true, role: true } } },
     orderBy: { createdAt: 'desc' },
@@ -24,21 +27,21 @@ export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
 
-  const body: NursingNoteInput = await req.json()
-  const authorId = (session.user as any).id
+  const body = await req.json() as { patientProfileId: string; type?: string; rawContent: string }
+  const authorId = (session.user as { id: string }).id
 
-  const note = await prisma.nursingNote.create({
+  const note = await prisma.careNote.create({
     data: {
       patientProfileId: body.patientProfileId,
       authorId,
-      type: body.type,
-      rawContent: body.rawContent,
-      audioUrl: body.audioUrl,
+      authorRole: session.user?.name ?? 'Unknown',
+      type: (body.type?.toUpperCase() as CareNoteType | undefined) ?? CareNoteType.TEXT,
+      content: body.rawContent,
     },
   })
 
   await prisma.auditLog.create({
-    data: { userId: authorId, action: 'CREATE_NURSING_NOTE', resourceId: note.id },
+    data: { userId: authorId, action: 'CREATE_CARE_NOTE', patientProfileId: body.patientProfileId },
   })
 
   return NextResponse.json(note, { status: 201 })

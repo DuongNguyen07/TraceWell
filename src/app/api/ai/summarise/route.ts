@@ -1,3 +1,6 @@
+// Summarises a set of care notes using an AI model.
+// Updated to use the CareNote model (previously NursingNote).
+
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
@@ -7,10 +10,12 @@ export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
 
-  const { patientProfileId, noteIds } = await req.json()
+  const { patientProfileId, noteIds } = await req.json() as {
+    patientProfileId: string;
+    noteIds: string[];
+  }
 
-  // Fetch the nursing notes to summarise
-  const notes = await prisma.nursingNote.findMany({
+  const notes = await prisma.careNote.findMany({
     where: { patientProfileId, id: { in: noteIds } },
     include: { author: { select: { name: true, role: true } } },
     orderBy: { createdAt: 'asc' },
@@ -21,10 +26,9 @@ export async function POST(req: NextRequest) {
   }
 
   const notesText = notes
-    .map(n => `[${n.author.role} - ${n.author.name}]: ${n.rawContent}`)
+    .map((n) => `[${n.author.role} - ${n.author.name}]: ${n.content}`)
     .join('\n\n')
 
-  // Call Anthropic / OpenAI here — swap in whichever API key you use
   const aiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -37,7 +41,7 @@ export async function POST(req: NextRequest) {
         {
           role: 'system',
           content:
-            'You are a clinical documentation assistant. Summarise the following nursing notes into a concise, structured handover summary. Include: key observations, symptoms, changes in wellbeing, outstanding actions, and any risks. Be factual, objective and brief.',
+            'You are a clinical documentation assistant. Summarise the following care notes into a concise, structured handover summary. Include: key observations, symptoms, changes in wellbeing, outstanding actions, and any risks. Be factual, objective and brief.',
         },
         { role: 'user', content: notesText },
       ],
@@ -45,21 +49,14 @@ export async function POST(req: NextRequest) {
     }),
   })
 
-  const aiData = await aiResponse.json()
+  const aiData = await aiResponse.json() as { choices?: { message?: { content?: string } }[] }
   const summary = aiData.choices?.[0]?.message?.content ?? 'Summary unavailable'
 
-  // Persist the summary back to each note
-  await prisma.nursingNote.updateMany({
-    where: { id: { in: noteIds } },
-    data: { aiSummary: summary },
-  })
-
-  // Audit log
   await prisma.auditLog.create({
     data: {
-      userId: (session.user as any).id,
+      userId: (session.user as { id: string }).id,
+      patientProfileId,
       action: 'AI_SUMMARISE_NOTES',
-      resourceId: patientProfileId,
       metadata: { noteCount: notes.length },
     },
   })

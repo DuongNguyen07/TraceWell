@@ -52,7 +52,8 @@ type ChatMessage = {
 // ---------- Inline helpers ----------
 
 function isClinicalNote(authorRole: string): boolean {
-  return /\((Nurse|Carer|Doctor)\)/.test(authorRole);
+  // Matches "Nurse", "Doctor", "Carer" with or without a name prefix like "Emily (Nurse)"
+  return /\b(Nurse|Carer|Doctor)\b/.test(authorRole);
 }
 
 function timeAgo(timestamp: number): string {
@@ -62,13 +63,6 @@ function timeAgo(timestamp: number): string {
   const diffHours = diffMinutes / 60;
   if (diffHours < 24) return `${Math.floor(diffHours)}h ago`;
   return `${Math.floor(diffHours / 24)}d ago`;
-}
-
-function formatDateTime(timestamp: number): string {
-  return new Date(timestamp).toLocaleString("en-AU", {
-    day: "numeric", month: "short", year: "numeric",
-    hour: "numeric", minute: "2-digit", hour12: true,
-  });
 }
 
 function formatShortDate(timestamp: number): string {
@@ -103,6 +97,7 @@ export default function FamilyResidentView({
   currentUserName,
   currentUserRole,
   onSendChatMessage,
+  showChat = true,
 }: {
   patient: Patient;
   personLabelSingular: string;
@@ -112,6 +107,7 @@ export default function FamilyResidentView({
   currentUserName: string;
   currentUserRole: string;
   onSendChatMessage: (content: string) => void;
+  showChat?: boolean;
 }) {
   const lastVisit = visibleNotes.find((n) => isClinicalNote(n.authorRole));
   const dayGroups = groupNotesByDay(visibleNotes);
@@ -243,51 +239,49 @@ export default function FamilyResidentView({
         </div>
       </div>
 
-      <div className="mt-6 rounded-xl border border-border bg-background p-4">
-        <span className="text-sm font-semibold text-ink">Family chat</span>
-        <p className="mt-1 mb-3 text-xs text-ink-soft">
-          Message the care team about {patient.name} — every family member sharing this{" "}
-          {personLabelSingular} can see this conversation.
-        </p>
-        <div className="mb-3 flex max-h-72 flex-col gap-2 overflow-y-auto">
-          {chatMessages.length === 0 ? (
-            <p className="text-sm text-ink-soft">No messages yet — say hello, or ask a question below.</p>
-          ) : (
-            chatMessages.map((msg) => {
-              const isMine = msg.authorName === currentUserName && msg.authorRole === currentUserRole;
-              return (
-                <div
-                  key={msg.id}
-                  className={`max-w-[85%] rounded-xl px-3 py-2 text-sm ${
-                    isMine ? "self-end bg-teal-soft text-ink" : "self-start bg-secondary text-ink"
-                  }`}
-                >
-                  <div className="text-xs font-medium text-ink-soft">
-                    {msg.authorName} ({msg.authorRole}) · {timeAgo(msg.timestamp)}
+      {showChat && (
+        <div className="mt-6 rounded-xl border border-border bg-background p-4">
+          <span className="text-sm font-semibold text-ink">Family chat</span>
+          <p className="mt-1 mb-3 text-xs text-ink-soft">
+            Message the care team about {patient.name} — every family member sharing this{" "}
+            {personLabelSingular} can see this conversation.
+          </p>
+          <div className="mb-3 flex max-h-72 flex-col gap-2 overflow-y-auto">
+            {chatMessages.length === 0 ? (
+              <p className="text-sm text-ink-soft">No messages yet — say hello, or ask a question below.</p>
+            ) : (
+              [...chatMessages].sort((a, b) => a.timestamp - b.timestamp).map((msg) => {
+                const isMine = msg.authorName === currentUserName && msg.authorRole === currentUserRole;
+                return (
+                  <div key={msg.id} className={`flex flex-col ${isMine ? "items-end" : "items-start"}`}>
+                    <div className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm ${isMine ? "bg-teal text-white" : "bg-secondary text-ink"}`}>
+                      {msg.content}
+                    </div>
+                    <span className="mt-0.5 text-[10px] text-muted-foreground">
+                      {msg.authorName || msg.authorRole} · {timeAgo(msg.timestamp)}
+                    </span>
                   </div>
-                  <div className="mt-0.5">{msg.content}</div>
-                  <div className="mt-0.5 text-[10px] text-muted-foreground">{formatDateTime(msg.timestamp)}</div>
-                </div>
-              );
-            })
-          )}
+                );
+              })
+            )}
+          </div>
+          <div className="flex gap-2">
+            <input
+              value={chatDraft}
+              onChange={(e) => setChatDraft(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && sendMessage()}
+              placeholder="Ask the care team anything..."
+              className="flex-1 rounded-lg border border-border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+            />
+            <button
+              onClick={sendMessage}
+              className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+            >
+              Send
+            </button>
+          </div>
         </div>
-        <div className="flex gap-2">
-          <input
-            value={chatDraft}
-            onChange={(e) => setChatDraft(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-            placeholder="Ask the care team anything..."
-            className="flex-1 rounded-lg border border-border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-          />
-          <button
-            onClick={sendMessage}
-            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
-          >
-            Send
-          </button>
-        </div>
-      </div>
+      )}
 
       <p className="mt-4 text-xs text-muted-foreground">
         Wellbeing checks and care notes are added by the care team — you can review a

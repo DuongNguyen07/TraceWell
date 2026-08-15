@@ -17,7 +17,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "TraceWell — AI Healthcare Intelligence Platform",
+  title: "TraceWell - AI Healthcare Intelligence Platform",
   description: "From passive records to proactive patient intelligence.",
 };
 

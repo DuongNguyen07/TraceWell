@@ -70,7 +70,7 @@ type LiveEvent =
   | { type: "care_note"; org: string; notifId: string; patientId: string; patientName: string; authorRole: string; preview: string; noteType: string; timestamp: number; note: CareNote }
   | { type: "wellbeing"; org: string; notifId?: string; patientId: string; patientName: string; authorRole: string; isConcern: boolean; timestamp: number; entry: WellbeingEntry }
   | { type: "chat"; org: string; patientId: string; patientName: string; authorName: string; authorRole: string; preview: string; timestamp: number; message: ChatMessage }
-  | { type: "referral"; org: string; notifId: string; patientId: string; patientName: string; authorRole: string; toRecipient: string; subject: string; timestamp: number; referral: ReferralNote }
+  | { type: "referral"; org: string; notifId: string; patientId: string; patientName: string; authorRole: string; toRecipients: string[]; subject: string; timestamp: number; referral: ReferralNote }
   | { type: "vitals"; org: string; patientId: string; patientName: string; authorRole: string; timestamp: number; vitals: VitalSigns };
 
 type HealthInfo = {
@@ -130,15 +130,12 @@ type MedicalReport = {
 
 const REPORT_TYPES: ReportType[] = ["Blood Test", "CT Scan", "MRI", "X-Ray", "Other"];
 
-// A referral/collaboration note — a doctor addressing another clinician,
-// department, or specialty about a specific patient. "toRecipient" is
-// deliberately free text rather than a dropdown of named accounts, since
-// everyone signing in as "Doctor" shares one login — this can only
-// realistically point at a department/specialty/named person as text.
 type ReferralNote = {
   id: string;
   fromName: string;
-  toRecipient: string;
+  toRecipients: string[];
+  toRecipient?: string;  // legacy — stored before multi-recipient support
+  referralType: "internal" | "external";
   subject: string;
   message: string;
   timestamp: number;
@@ -767,8 +764,7 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
   const [medFrequency, setMedFrequency] = useState("");
 
   // ---------- Shift History panel state (Doctor only) ----------
-  const [expandedShiftKey, setExpandedShiftKey]           = useState<string | null>(null);
-  const [expandedNurseShiftKey, setExpandedNurseShiftKey] = useState<string | null>(null);
+  const [expandedShiftKey, setExpandedShiftKey] = useState<string | null>(null);
 
   // ---------- Reports & Imaging form state ----------
   const [reportFormOpen, setReportFormOpen] = useState(false);
@@ -780,9 +776,12 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
 
   // ---------- Referrals & Collaboration form state ----------
   const [referralFormOpen, setReferralFormOpen] = useState(false);
-  const [referralTo, setReferralTo] = useState("");
+  const [referralRecipients, setReferralRecipients] = useState<string[]>([]);
+  const [referralRecipientInput, setReferralRecipientInput] = useState("");
+  const [referralType, setReferralType] = useState<"internal" | "external">("internal");
   const [referralSubject, setReferralSubject] = useState("");
   const [referralMessage, setReferralMessage] = useState("");
+
 
   // ---------- Vital Signs form state ----------
   // Each field is a string (not a number) while being typed, since an
@@ -1050,9 +1049,12 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
       let message = "";
       let notifType: NotifType = "care_update";
       if (ev.type === "care_note") {
+        const noteType = (ev as Extract<LiveEvent, { type: "care_note" }>).noteType;
+        if (noteType === "family_update") return;
         message = `${ev.authorRole} logged on ${ev.patientName}: "${ev.preview}"`;
       } else if (ev.type === "referral") {
-        message = `Referral for ${ev.patientName} from ${ev.authorRole} → ${ev.toRecipient}`;
+        const recipients = ev.toRecipients.join(", ");
+        message = `Referral for ${ev.patientName} from ${ev.authorRole} → ${recipients}`;
       } else if (ev.type === "chat") {
         message = `${(ev as Extract<LiveEvent, { type: "chat" }>).authorName}: "${ev.preview}" (re: ${ev.patientName})`;
       } else if (ev.type === "vitals") {
@@ -1203,37 +1205,6 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
     patientNotes.filter((n) => n.type === "text" || n.type === "image" || n.type === "voice")
   );
 
-  // Org-wide nurse shift history for the doctor view — all nurse/carer notes
-  // across every patient, grouped by shift, newest-first. Limited to 6 shifts.
-  const nurseShiftGroups: Array<{
-    key: string;
-    label: string;
-    ts: number;
-    nursePts: Record<string, { patientIds: Set<string>; count: number }>;
-  }> = (() => {
-    if (!isDoctorRole) return [];
-    const groups: Record<string, { key: string; label: string; ts: number; nursePts: Record<string, { patientIds: Set<string>; count: number }> }> = {};
-    patients.forEach((p) => {
-      (notesByPatient[p.id] ?? [])
-        .filter((n) => /\b(Nurse|Carer|RN|LPN)\b/i.test(n.authorRole) && (n.type === "text" || n.type === "image" || n.type === "voice"))
-        .forEach((n) => {
-          const period = getShiftPeriod(n.timestamp);
-          if (!groups[period.key]) {
-            groups[period.key] = { key: period.key, label: period.label, ts: n.timestamp, nursePts: {} };
-          } else {
-            groups[period.key].ts = Math.max(groups[period.key].ts, n.timestamp);
-          }
-          if (!groups[period.key].nursePts[n.authorRole]) {
-            groups[period.key].nursePts[n.authorRole] = { patientIds: new Set(), count: 0 };
-          }
-          groups[period.key].nursePts[n.authorRole].patientIds.add(p.id);
-          groups[period.key].nursePts[n.authorRole].count++;
-        });
-    });
-    return Object.values(groups)
-      .sort((a, b) => b.ts - a.ts)
-      .slice(0, 6);
-  })();
 
   const patientReports = selectedPatient ? reportsByPatient[selectedPatient.id] ?? [] : [];
   const sortedReports = [...patientReports].sort((a, b) => b.timestamp - a.timestamp);
@@ -2062,13 +2033,14 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
   // ================================================================
 
   function addReferral() {
-    if (!selectedPatient || !referralTo.trim() || !referralSubject.trim()) return;
+    if (!selectedPatient || referralRecipients.length === 0 || !referralSubject.trim()) return;
 
     const newReferral: ReferralNote = {
       id: crypto.randomUUID(),
-      shareCode: generateReferralCode(),
+      shareCode: referralType === "internal" ? generateReferralCode() : undefined,
       fromName: displayIdentity,
-      toRecipient: referralTo.trim(),
+      toRecipients: referralRecipients,
+      referralType,
       subject: referralSubject.trim(),
       message: referralMessage.trim(),
       timestamp: Date.now(),
@@ -2082,12 +2054,12 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
     setReferralsByPatient(updatedReferrals);
     if (org) saveToStorage(`tracewell:${org}:referrals`, updatedReferrals);
 
-    // Broadcast to clinical staff tabs instantly; also persist as a notification.
     const referralNotifId = crypto.randomUUID();
+    const recipientStr = referralRecipients.join(", ");
     broadcast({
       type: "referral", org, notifId: referralNotifId,
       patientId: selectedPatient.id, patientName: selectedPatient.name,
-      authorRole: displayIdentity, toRecipient: newReferral.toRecipient,
+      authorRole: displayIdentity, toRecipients: newReferral.toRecipients,
       subject: newReferral.subject, timestamp: newReferral.timestamp,
       referral: newReferral,
     });
@@ -2095,7 +2067,7 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
       id: referralNotifId,
       patientId: selectedPatient.id,
       patientName: selectedPatient.name,
-      message: `New referral for ${selectedPatient.name} from ${displayIdentity} to ${newReferral.toRecipient}: "${newReferral.subject}"`,
+      message: `New referral for ${selectedPatient.name} from ${displayIdentity} to ${recipientStr}: "${newReferral.subject}"`,
       type: "care_update",
       authorRole: displayIdentity,
       timestamp: newReferral.timestamp,
@@ -2106,7 +2078,9 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
     setNotifications(updatedNotifs);
     if (org) saveToStorage(`tracewell:${org}:notifications`, updatedNotifs);
 
-    setReferralTo("");
+    setReferralRecipients([]);
+    setReferralRecipientInput("");
+    setReferralType("internal");
     setReferralSubject("");
     setReferralMessage("");
     setReferralFormOpen(false);
@@ -2873,12 +2847,49 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
 
                   {referralFormOpen && (
                     <div className="mb-4 flex flex-col gap-3 rounded-lg border border-border p-3">
-                      <input
-                        value={referralTo}
-                        onChange={(e) => setReferralTo(e.target.value)}
-                        placeholder="To (e.g. Gynaecology, Surgical team, Dr. Patel)"
-                        className="rounded-lg border border-border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-                      />
+                      {/* Internal / External toggle */}
+                      <div className="flex gap-1 rounded-full bg-secondary p-0.5 w-fit">
+                        {(["internal", "external"] as const).map((t) => (
+                          <button key={t} onClick={() => setReferralType(t)}
+                            className={`rounded-full px-3 py-1 text-xs font-medium capitalize transition-colors ${referralType === t ? "bg-primary text-primary-foreground" : "text-ink-soft hover:bg-card"}`}>
+                            {t}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Recipient chip input */}
+                      <div className="flex min-h-[40px] flex-wrap items-center gap-1.5 rounded-lg border border-border px-2 py-1.5 focus-within:ring-2 focus-within:ring-ring">
+                        {referralRecipients.map((r) => (
+                          <span key={r} className="flex items-center gap-1 rounded-full bg-teal-soft px-2.5 py-0.5 text-xs font-medium text-teal">
+                            {r}
+                            <button onClick={() => setReferralRecipients((prev) => prev.filter((x) => x !== r))} className="ml-0.5 rounded-full hover:opacity-60">
+                              <X size={10} />
+                            </button>
+                          </span>
+                        ))}
+                        <input
+                          value={referralRecipientInput}
+                          onChange={(e) => setReferralRecipientInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if ((e.key === "Enter" || e.key === ",") && referralRecipientInput.trim()) {
+                              e.preventDefault();
+                              const val = referralRecipientInput.trim().replace(/,$/, "");
+                              if (val && !referralRecipients.includes(val)) setReferralRecipients((prev) => [...prev, val]);
+                              setReferralRecipientInput("");
+                            }
+                          }}
+                          onBlur={() => {
+                            if (referralRecipientInput.trim()) {
+                              const val = referralRecipientInput.trim();
+                              if (!referralRecipients.includes(val)) setReferralRecipients((prev) => [...prev, val]);
+                              setReferralRecipientInput("");
+                            }
+                          }}
+                          placeholder={referralRecipients.length === 0 ? "Add recipient (press Enter)" : "Add another…"}
+                          className="min-w-[140px] flex-1 bg-transparent text-sm outline-none"
+                        />
+                      </div>
+
                       <input
                         value={referralSubject}
                         onChange={(e) => setReferralSubject(e.target.value)}
@@ -2893,10 +2904,12 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
                         className="resize-none rounded-lg border border-border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
                       />
                       <div className="flex gap-2">
-                        <button onClick={addReferral} className="rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">
+                        <button onClick={addReferral} disabled={referralRecipients.length === 0 || !referralSubject.trim()}
+                          className="rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50">
                           Send referral
                         </button>
-                        <button onClick={() => setReferralFormOpen(false)} className="rounded-full px-4 py-2 text-sm text-ink-soft hover:bg-secondary">
+                        <button onClick={() => { setReferralFormOpen(false); setReferralRecipients([]); setReferralRecipientInput(""); }}
+                          className="rounded-full px-4 py-2 text-sm text-ink-soft hover:bg-secondary">
                           Cancel
                         </button>
                       </div>
@@ -2907,52 +2920,61 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
                     <p className="text-sm text-ink-soft">No referrals or collaboration notes yet.</p>
                   ) : (
                     <div className="flex flex-col gap-3">
-                      {sortedReferrals.map((referral) => (
-                        <div key={referral.id} className="rounded-lg border border-border p-3">
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0 flex-1">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="text-sm font-medium text-ink">{referral.subject}</span>
-                                {referral.acknowledged ? (
-                                  <span className="rounded-full bg-teal-soft px-2 py-0.5 text-xs text-teal">Acknowledged</span>
-                                ) : (
-                                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800">Awaiting response</span>
+                      {sortedReferrals.map((referral) => {
+                        const recipients = referral.toRecipients ?? (referral.toRecipient ? [referral.toRecipient] : ["Unknown"]);
+                        const isExternal = referral.referralType === "external";
+                        return (
+                          <div key={referral.id} className="rounded-lg border border-border p-3">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="text-sm font-medium text-ink">{referral.subject}</span>
+                                  {isExternal ? (
+                                    <span className="rounded-full bg-purple-100 px-2 py-0.5 text-xs text-purple-700">External</span>
+                                  ) : referral.acknowledged ? (
+                                    <span className="rounded-full bg-teal-soft px-2 py-0.5 text-xs text-teal">Acknowledged</span>
+                                  ) : (
+                                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800">Awaiting response</span>
+                                  )}
+                                </div>
+                                <div className="mt-0.5 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+                                  <span>From {referral.fromName}</span>
+                                  <ArrowRight size={10} className="shrink-0" />
+                                  <span>{recipients.join(", ")}</span>
+                                  <span>· {formatDateTime(referral.timestamp)}</span>
+                                </div>
+                                {referral.shareCode && (
+                                  <div className="mt-1 flex items-center gap-1.5">
+                                    <span className="rounded bg-secondary px-2 py-0.5 font-mono text-xs text-ink">{referral.shareCode}</span>
+                                    <button
+                                      onClick={() => navigator.clipboard?.writeText(referral.shareCode!)}
+                                      className="text-muted-foreground hover:text-teal"
+                                      title="Copy referral code"
+                                    >
+                                      <Copy size={11} />
+                                    </button>
+                                  </div>
+                                )}
+                                {referral.message && <div className="mt-1.5 text-sm text-ink">{referral.message}</div>}
+                                {referral.acknowledged && referral.acknowledgedBy && (
+                                  <div className="mt-1.5 text-xs text-muted-foreground">
+                                    Acknowledged by {referral.acknowledgedBy} · {formatDateTime(referral.acknowledgedAt!)}
+                                  </div>
                                 )}
                               </div>
-                              <div className="mt-0.5 text-xs text-muted-foreground">
-                                From {referral.fromName} <ArrowRight size={10} className="inline" /> To {referral.toRecipient} · {formatDateTime(referral.timestamp)}
-                              </div>
-                              {referral.shareCode && (
-                                <div className="mt-1 flex items-center gap-1.5">
-                                  <span className="rounded bg-secondary px-2 py-0.5 font-mono text-xs text-ink">{referral.shareCode}</span>
-                                  <button
-                                    onClick={() => navigator.clipboard?.writeText(referral.shareCode!)}
-                                    className="text-muted-foreground hover:text-teal"
-                                    title="Copy referral code"
-                                  >
-                                    <Copy size={11} />
-                                  </button>
-                                </div>
-                              )}
-                              {referral.message && <div className="mt-1.5 text-sm text-ink">{referral.message}</div>}
-                              {referral.acknowledged && referral.acknowledgedBy && (
-                                <div className="mt-1.5 text-xs text-muted-foreground">
-                                  Acknowledged by {referral.acknowledgedBy} · {formatDateTime(referral.acknowledgedAt!)}
-                                </div>
-                              )}
+                              <button onClick={() => deleteReferral(referral.id)} title="Delete this referral" className="shrink-0 text-xs text-muted-foreground hover:text-destructive"><X size={12} /></button>
                             </div>
-                            <button onClick={() => deleteReferral(referral.id)} title="Delete this referral" className="shrink-0 text-xs text-muted-foreground hover:text-destructive"><X size={12} /></button>
+                            {!isExternal && !referral.acknowledged && (
+                              <button
+                                onClick={() => acknowledgeReferral(referral.id)}
+                                className="mt-2 rounded-full bg-secondary px-3 py-1 text-xs font-medium text-ink hover:opacity-80"
+                              >
+                                Mark as acknowledged
+                              </button>
+                            )}
                           </div>
-                          {!referral.acknowledged && (
-                            <button
-                              onClick={() => acknowledgeReferral(referral.id)}
-                              className="mt-2 rounded-full bg-secondary px-3 py-1 text-xs font-medium text-ink hover:opacity-80"
-                            >
-                              Mark as acknowledged
-                            </button>
-                          )}
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -3004,77 +3026,6 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
                   </div>
                 )}
 
-                {/* ── Nurse shift history (Doctor only) ─────────────────────────────── */}
-                {isDoctorRole && (
-                  <div className="mt-6 rounded-xl border border-border bg-background p-4">
-                    <div className="mb-1 text-sm font-semibold text-ink">Nurse shift history</div>
-                    <p className="mb-3 text-xs text-muted-foreground">
-                      Nursing and carer activity across all {org === "hospital" ? "patients" : "residents"}, grouped by shift.
-                    </p>
-                    {nurseShiftGroups.length === 0 ? (
-                      <p className="text-sm text-ink-soft">No nurse shift data yet.</p>
-                    ) : (
-                      <div className="flex flex-col gap-1.5">
-                        {nurseShiftGroups.map((group) => {
-                          const isOpen = expandedNurseShiftKey === group.key;
-                          const nurseEntries = Object.entries(group.nursePts);
-                          return (
-                            <div key={group.key} className="rounded-lg border border-border">
-                              <button
-                                onClick={() => setExpandedNurseShiftKey(isOpen ? null : group.key)}
-                                className="flex w-full items-center justify-between px-3 py-2"
-                              >
-                                <span className="text-sm font-medium text-ink">{group.label}</span>
-                                <span className="flex items-center gap-2">
-                                  <span className="rounded-full bg-teal-soft px-2 py-0.5 text-xs text-teal">
-                                    {nurseEntries.length} nurse{nurseEntries.length !== 1 ? "s" : ""}
-                                  </span>
-                                  {isOpen ? <ChevronUp size={14} className="text-muted-foreground" /> : <ChevronDown size={14} className="text-muted-foreground" />}
-                                </span>
-                              </button>
-                              {isOpen && (
-                                <div className="flex flex-col gap-2 px-3 pb-3">
-                                  {nurseEntries
-                                    .sort((a, b) => b[1].count - a[1].count)
-                                    .map(([authorRole, { patientIds, count }]) => {
-                                      const displayName = authorRole.match(/^(.*?)\s*\(.*?\)\s*$/) ? authorRole.match(/^(.*?)\s*\(.*?\)\s*$/)![1].trim() : authorRole;
-                                      return (
-                                        <div key={authorRole} className="rounded-lg border border-border bg-background p-2.5">
-                                          <div className="flex items-center justify-between">
-                                            <div className="flex items-center gap-1.5">
-                                              <span className="h-1.5 w-1.5 rounded-full bg-teal" />
-                                              <span className="text-xs font-semibold text-ink">{displayName}</span>
-                                            </div>
-                                            <span className="text-[10px] text-muted-foreground">
-                                              {count} note{count !== 1 ? "s" : ""} · {patientIds.size} {org === "hospital" ? "patient" : "resident"}{patientIds.size !== 1 ? "s" : ""}
-                                            </span>
-                                          </div>
-                                          <div className="mt-1.5 flex flex-wrap gap-1">
-                                            {[...patientIds].map((pid) => {
-                                              const pt = patients.find((p) => p.id === pid);
-                                              return pt ? (
-                                                <button
-                                                  key={pid}
-                                                  onClick={() => setSelectedId(pid)}
-                                                  className="rounded bg-teal-soft px-1.5 py-0.5 text-[10px] text-teal hover:opacity-80"
-                                                >
-                                                  {pt.name}
-                                                </button>
-                                              ) : null;
-                                            })}
-                                          </div>
-                                        </div>
-                                      );
-                                    })}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )}
 
                 {/* ================================================================
                      DISCHARGE SUMMARY PANEL — Doctor only.

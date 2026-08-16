@@ -59,7 +59,7 @@ type ActivityEvent = {
 
 function timeAgo(ts: number): string {
   const mins = (Date.now() - ts) / 60000;
-  if (mins < 1) return "just now";
+  if (mins <= 1) return "just now";
   if (mins < 60) return `${Math.floor(mins)}m ago`;
   const hrs = mins / 60;
   if (hrs < 24) return `${Math.floor(hrs)}h ago`;
@@ -329,6 +329,8 @@ export default function ManagerView({
 }) {
   const [selectedPatientId, setSelectedPatientId]   = useState<string | null>(null);
   const [expandedPrevShift, setExpandedPrevShift]   = useState<string | null>(null);
+  const [shiftPeriod, setShiftPeriod]               = useState<"recent" | "week" | "month">("recent");
+  const [expandedDayKey, setExpandedDayKey]         = useState<string | null>(null);
 
   const personLabel    = org === "hospital" ? "patients"  : "residents";
   const personLabelCap = org === "hospital" ? "Patients"  : "Residents";
@@ -428,9 +430,10 @@ export default function ManagerView({
   const doctors = [...staffMap.values()].filter((s) => s.roleType === "Doctor").sort((a, b) => b.lastActive - a.lastActive);
   const nurses  = [...staffMap.values()].filter((s) => s.roleType === "Nurse").sort((a, b) => b.lastActive - a.lastActive);
 
-  // ── Previous shifts (last 4 completed shifts) ─────────────────
+  // ── Previous shifts ───────────────────────────────────────────
 
-  const prevShiftWindows = getPreviousShiftWindows(shift.start, 4);
+  const shiftCount = shiftPeriod === "recent" ? 4 : shiftPeriod === "week" ? 21 : 90;
+  const prevShiftWindows = getPreviousShiftWindows(shift.start, shiftCount);
 
   const prevShiftData = prevShiftWindows.map((w) => {
     const windowEvents = allActivityEvents.filter((e) => e.timestamp >= w.start && e.timestamp < w.end && isHumanClinicalStaff(e.authorRole));
@@ -447,6 +450,22 @@ export default function ManagerView({
     });
     return { ...w, staff: [...sm.entries()].map(([key, v]) => ({ key, ...v })).sort((a, b) => b.count - a.count), totalEvents: windowEvents.length };
   });
+
+  // ── Day-grouped shifts for week/month views ───────────────────
+
+  type DayShifts = { dateKey: string; dateLabel: string; shifts: typeof prevShiftData };
+  const dayShiftGroups: DayShifts[] = (() => {
+    if (shiftPeriod === "recent") return [];
+    const map = new Map<string, DayShifts>();
+    for (const w of prevShiftData) {
+      const d = new Date(w.start);
+      const dateKey = d.toISOString().slice(0, 10);
+      const dateLabel = d.toLocaleDateString("en-AU", { weekday: "long", day: "numeric", month: "short" });
+      if (!map.has(dateKey)) map.set(dateKey, { dateKey, dateLabel, shifts: [] });
+      map.get(dateKey)!.shifts.push(w);
+    }
+    return [...map.values()];
+  })();
 
   // ── Wellbeing / org avg ───────────────────────────────────────
 
@@ -879,116 +898,228 @@ export default function ManagerView({
 
           {/* ── Previous shifts ──────────────────────────────────── */}
           <div className="rounded-xl border border-border bg-card p-4 shadow-soft">
-            <div className="mb-1 text-sm font-semibold text-ink">Previous shifts</div>
-            <p className="mb-3 text-xs text-muted-foreground">
-              Completed shifts for all clinical staff — who worked, which {personLabel} they covered.
-            </p>
-            <div className="flex flex-col gap-2">
-              {prevShiftData.map((w) => {
-                const isOpen = expandedPrevShift === w.key;
-                const prevDoctors = w.staff.filter((s) => s.roleType === "Doctor");
-                const prevNurses  = w.staff.filter((s) => s.roleType === "Nurse");
-                return (
-                  <div key={w.key} className="overflow-hidden rounded-xl border border-border">
-                    <button
-                      onClick={() => setExpandedPrevShift(isOpen ? null : w.key)}
-                      className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-secondary"
-                    >
-                      <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${w.bgClass} ${w.colorClass}`}>
-                        {w.label}
-                      </span>
-                      <span className="ml-auto flex shrink-0 items-center gap-2 text-[11px] text-muted-foreground">
-                        {w.staff.length > 0
-                          ? <><span className="font-medium text-ink">{w.staff.length}</span> staff · <span className="font-medium text-ink">{w.totalEvents}</span> events</>
-                          : <span>No activity</span>
-                        }
-                        {isOpen ? <ChevronUp /> : <ChevronDown />}
-                      </span>
-                    </button>
-                    {isOpen && (
-                      w.staff.length === 0 ? (
-                        <div className="border-t border-border px-4 py-3 text-sm text-ink-soft">
-                          No clinical activity recorded for this shift.
-                        </div>
-                      ) : (
-                        <div className="grid grid-cols-1 gap-4 border-t border-border px-4 py-3 sm:grid-cols-2">
-                          {/* Doctors column */}
-                          <div>
-                            <div className="mb-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                              Doctors ({prevDoctors.length})
-                            </div>
-                            {prevDoctors.length === 0 ? (
-                              <p className="text-xs text-ink-soft">None on this shift</p>
-                            ) : (
-                              <div className="flex flex-col gap-2">
-                                {prevDoctors.map((s) => (
-                                  <div key={s.key}>
-                                    <div className="flex items-center gap-1.5">
-                                      <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
-                                      <span className="text-xs font-semibold text-ink">{s.name}</span>
-                                      <span className="text-[10px] text-muted-foreground">({s.count} events)</span>
-                                    </div>
-                                    <div className="mt-1 flex flex-wrap gap-1 pl-3">
-                                      {[...s.patients].map((pid) => {
-                                        const pt = patients.find((p) => p.id === pid);
-                                        return pt ? (
-                                          <button
-                                            key={pid}
-                                            onClick={() => setSelectedPatientId(pid)}
-                                            className="rounded bg-blue-50 px-1.5 py-0.5 text-[10px] text-blue-700 hover:opacity-80"
-                                          >
-                                            {pt.name}
-                                          </button>
-                                        ) : null;
-                                      })}
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                          {/* Nurses column */}
-                          <div>
-                            <div className="mb-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                              Nurses / Carers ({prevNurses.length})
-                            </div>
-                            {prevNurses.length === 0 ? (
-                              <p className="text-xs text-ink-soft">None on this shift</p>
-                            ) : (
-                              <div className="flex flex-col gap-2">
-                                {prevNurses.map((s) => (
-                                  <div key={s.key}>
-                                    <div className="flex items-center gap-1.5">
-                                      <span className="h-1.5 w-1.5 rounded-full bg-teal" />
-                                      <span className="text-xs font-semibold text-ink">{s.name}</span>
-                                      <span className="text-[10px] text-muted-foreground">({s.count} events)</span>
-                                    </div>
-                                    <div className="mt-1 flex flex-wrap gap-1 pl-3">
-                                      {[...s.patients].map((pid) => {
-                                        const pt = patients.find((p) => p.id === pid);
-                                        return pt ? (
-                                          <button
-                                            key={pid}
-                                            onClick={() => setSelectedPatientId(pid)}
-                                            className="rounded bg-teal-soft px-1.5 py-0.5 text-[10px] text-teal hover:opacity-80"
-                                          >
-                                            {pt.name}
-                                          </button>
-                                        ) : null;
-                                      })}
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )
-                    )}
-                  </div>
-                );
-              })}
+            <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-ink">Previous shifts</div>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Completed shifts — who worked, which {personLabel} they covered.
+                </p>
+              </div>
+              {/* Period toggle */}
+              <div className="flex shrink-0 rounded-lg border border-border bg-secondary p-0.5 text-xs">
+                {(["recent", "week", "month"] as const).map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => { setShiftPeriod(p); setExpandedPrevShift(null); setExpandedDayKey(null); }}
+                    className={`rounded-md px-3 py-1 font-medium transition-colors ${
+                      shiftPeriod === p ? "bg-white text-ink shadow-sm" : "text-ink-soft hover:text-ink"
+                    }`}
+                  >
+                    {p === "recent" ? "Recent" : p === "week" ? "Week" : "Month"}
+                  </button>
+                ))}
+              </div>
             </div>
+
+            {/* ── Recent: individual shift accordions (original behaviour) ── */}
+            {shiftPeriod === "recent" && (
+              <div className="flex flex-col gap-2">
+                {prevShiftData.map((w) => {
+                  const isOpen = expandedPrevShift === w.key;
+                  const prevDoctors = w.staff.filter((s) => s.roleType === "Doctor");
+                  const prevNurses  = w.staff.filter((s) => s.roleType === "Nurse");
+                  return (
+                    <div key={w.key} className="overflow-hidden rounded-xl border border-border">
+                      <button
+                        onClick={() => setExpandedPrevShift(isOpen ? null : w.key)}
+                        className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-secondary"
+                      >
+                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${w.bgClass} ${w.colorClass}`}>
+                          {w.label}
+                        </span>
+                        <span className="ml-auto flex shrink-0 items-center gap-2 text-[11px] text-muted-foreground">
+                          {w.staff.length > 0
+                            ? <><span className="font-medium text-ink">{w.staff.length}</span> staff · <span className="font-medium text-ink">{w.totalEvents}</span> events</>
+                            : <span>No activity</span>
+                          }
+                          {isOpen ? <ChevronUp /> : <ChevronDown />}
+                        </span>
+                      </button>
+                      {isOpen && (
+                        w.staff.length === 0 ? (
+                          <div className="border-t border-border px-4 py-3 text-sm text-ink-soft">
+                            No clinical activity recorded for this shift.
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-1 gap-4 border-t border-border px-4 py-3 sm:grid-cols-2">
+                            <div>
+                              <div className="mb-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                                Doctors ({prevDoctors.length})
+                              </div>
+                              {prevDoctors.length === 0 ? (
+                                <p className="text-xs text-ink-soft">None on this shift</p>
+                              ) : (
+                                <div className="flex flex-col gap-2">
+                                  {prevDoctors.map((s) => (
+                                    <div key={s.key}>
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
+                                        <span className="text-xs font-semibold text-ink">{s.name}</span>
+                                        <span className="text-[10px] text-muted-foreground">({s.count} events)</span>
+                                      </div>
+                                      <div className="mt-1 flex flex-wrap gap-1 pl-3">
+                                        {[...s.patients].map((pid) => {
+                                          const pt = patients.find((p) => p.id === pid);
+                                          return pt ? (
+                                            <button key={pid} onClick={() => setSelectedPatientId(pid)} className="rounded bg-blue-50 px-1.5 py-0.5 text-[10px] text-blue-700 hover:opacity-80">
+                                              {pt.name}
+                                            </button>
+                                          ) : null;
+                                        })}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                            <div>
+                              <div className="mb-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                                Nurses / Carers ({prevNurses.length})
+                              </div>
+                              {prevNurses.length === 0 ? (
+                                <p className="text-xs text-ink-soft">None on this shift</p>
+                              ) : (
+                                <div className="flex flex-col gap-2">
+                                  {prevNurses.map((s) => (
+                                    <div key={s.key}>
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="h-1.5 w-1.5 rounded-full bg-teal" />
+                                        <span className="text-xs font-semibold text-ink">{s.name}</span>
+                                        <span className="text-[10px] text-muted-foreground">({s.count} events)</span>
+                                      </div>
+                                      <div className="mt-1 flex flex-wrap gap-1 pl-3">
+                                        {[...s.patients].map((pid) => {
+                                          const pt = patients.find((p) => p.id === pid);
+                                          return pt ? (
+                                            <button key={pid} onClick={() => setSelectedPatientId(pid)} className="rounded bg-teal-soft px-1.5 py-0.5 text-[10px] text-teal hover:opacity-80">
+                                              {pt.name}
+                                            </button>
+                                          ) : null;
+                                        })}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* ── Week / Month: day-grouped accordions ────────────── */}
+            {shiftPeriod !== "recent" && (
+              <div className="flex flex-col gap-2">
+                {dayShiftGroups.length === 0 && (
+                  <p className="text-sm text-ink-soft">No shift data available.</p>
+                )}
+                {dayShiftGroups.map((day) => {
+                  const isDayOpen = expandedDayKey === day.dateKey;
+                  const dayTotalEvents = day.shifts.reduce((s, w) => s + w.totalEvents, 0);
+                  const dayStaffKeys  = new Set(day.shifts.flatMap((w) => w.staff.map((s) => s.key)));
+                  return (
+                    <div key={day.dateKey} className="overflow-hidden rounded-xl border border-border">
+                      <button
+                        onClick={() => setExpandedDayKey(isDayOpen ? null : day.dateKey)}
+                        className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-secondary"
+                      >
+                        <span className="text-sm font-medium text-ink">{day.dateLabel}</span>
+                        <span className="ml-auto flex shrink-0 items-center gap-2 text-[11px] text-muted-foreground">
+                          {dayStaffKeys.size > 0
+                            ? <><span className="font-medium text-ink">{dayStaffKeys.size}</span> staff · <span className="font-medium text-ink">{dayTotalEvents}</span> events</>
+                            : <span>No activity</span>
+                          }
+                          {isDayOpen ? <ChevronUp /> : <ChevronDown />}
+                        </span>
+                      </button>
+                      {isDayOpen && (
+                        <div className="flex flex-col gap-2 border-t border-border px-3 pb-3 pt-2">
+                          {day.shifts.map((w) => {
+                            const shiftDocs   = w.staff.filter((s) => s.roleType === "Doctor");
+                            const shiftNurses = w.staff.filter((s) => s.roleType === "Nurse");
+                            return (
+                              <div key={w.key} className="rounded-lg border border-border bg-background p-3">
+                                <div className={`mb-2 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${w.bgClass} ${w.colorClass}`}>
+                                  {w.label}
+                                </div>
+                                {w.staff.length === 0 ? (
+                                  <p className="text-xs text-ink-soft">No clinical activity</p>
+                                ) : (
+                                  <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                      <div className="mb-1 text-[10px] text-muted-foreground">Doctors ({shiftDocs.length})</div>
+                                      {shiftDocs.length === 0 ? <p className="text-xs text-ink-soft">—</p> : (
+                                        <div className="flex flex-col gap-1">
+                                          {shiftDocs.map((s) => (
+                                            <div key={s.key}>
+                                              <div className="flex items-center gap-1">
+                                                <span className="h-1.5 w-1.5 rounded-full bg-blue-500 shrink-0" />
+                                                <span className="text-xs font-semibold text-ink">{s.name}</span>
+                                                <span className="text-[10px] text-muted-foreground">·{s.count}ev</span>
+                                              </div>
+                                              <div className="mt-0.5 flex flex-wrap gap-1 pl-3">
+                                                {[...s.patients].map((pid) => {
+                                                  const pt = patients.find((p) => p.id === pid);
+                                                  return pt ? (
+                                                    <button key={pid} onClick={() => setSelectedPatientId(pid)} className="rounded bg-blue-50 px-1.5 py-0.5 text-[10px] text-blue-700 hover:opacity-80">{pt.name}</button>
+                                                  ) : null;
+                                                })}
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                    <div>
+                                      <div className="mb-1 text-[10px] text-muted-foreground">Nurses / Carers ({shiftNurses.length})</div>
+                                      {shiftNurses.length === 0 ? <p className="text-xs text-ink-soft">—</p> : (
+                                        <div className="flex flex-col gap-1">
+                                          {shiftNurses.map((s) => (
+                                            <div key={s.key}>
+                                              <div className="flex items-center gap-1">
+                                                <span className="h-1.5 w-1.5 rounded-full bg-teal shrink-0" />
+                                                <span className="text-xs font-semibold text-ink">{s.name}</span>
+                                                <span className="text-[10px] text-muted-foreground">·{s.count}ev</span>
+                                              </div>
+                                              <div className="mt-0.5 flex flex-wrap gap-1 pl-3">
+                                                {[...s.patients].map((pid) => {
+                                                  const pt = patients.find((p) => p.id === pid);
+                                                  return pt ? (
+                                                    <button key={pid} onClick={() => setSelectedPatientId(pid)} className="rounded bg-teal-soft px-1.5 py-0.5 text-[10px] text-teal hover:opacity-80">{pt.name}</button>
+                                                  ) : null;
+                                                })}
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
 

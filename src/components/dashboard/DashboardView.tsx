@@ -300,7 +300,7 @@ function roleLabel(role: string | null, org: string | null): string {
 
 function timeAgo(timestamp: number): string {
   const diffMinutes = (Date.now() - timestamp) / 60000;
-  if (diffMinutes < 1) return "just now";
+  if (diffMinutes <= 1) return "just now";
   if (diffMinutes < 60) return `${Math.floor(diffMinutes)}m ago`;
   const diffHours = diffMinutes / 60;
   if (diffHours < 24) return `${Math.floor(diffHours)}h ago`;
@@ -349,22 +349,23 @@ function saveToStorage<T>(key: string, value: T) {
   }
 }
 
-// Merges two per-patient data dicts, deduplicating by id (if present) or timestamp.
-// Used to combine localStorage data with server-side data on initial load so
-// clients on any device see all data, not just what they stored locally.
+// Server data is authoritative. For patients with server records, use the server
+// list directly and only append local items that are strictly newer than the
+// newest server item (i.e. notes the user added this session but not yet in DB).
+// This prevents stale localStorage entries from old seed runs appearing as duplicates.
 function mergeDataDicts<T extends { id?: string; timestamp?: number }>(
   local: Record<string, T[]>,
   server: Record<string, T[]>
 ): Record<string, T[]> {
   const result: Record<string, T[]> = { ...local };
-  for (const [patientId, items] of Object.entries(server)) {
-    const existing = result[patientId] ?? [];
-    const seenIds = new Set(existing.map((x) => x.id).filter((id): id is string => !!id));
-    const seenTs  = new Set(existing.map((x) => x.timestamp).filter((t): t is number => t != null));
-    const extra = (items as T[]).filter((x) =>
-      x.id ? !seenIds.has(x.id) : x.timestamp == null || !seenTs.has(x.timestamp)
+  for (const [patientId, serverItems] of Object.entries(server)) {
+    const serverIds = new Set(serverItems.map((x) => x.id).filter(Boolean) as string[]);
+    const latestServerTs = serverItems.reduce((max, x) => Math.max(max, x.timestamp ?? 0), 0);
+    // Keep only local notes that (a) aren't already in server and (b) were added after the newest server note
+    const localNew = (result[patientId] ?? []).filter(
+      (x) => x.id && !serverIds.has(x.id) && (x.timestamp ?? 0) > latestServerTs
     );
-    result[patientId] = [...existing, ...extra];
+    result[patientId] = [...serverItems, ...localNew];
   }
   return result;
 }
@@ -2137,6 +2138,7 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
       id: crypto.randomUUID(),
       shareCode: referralType === "internal" ? generateReferralCode() : undefined,
       fromName: displayIdentity,
+      toRecipient: referralRecipients[0] ?? "",
       toRecipients: referralRecipients,
       referralType,
       subject: referralSubject.trim(),

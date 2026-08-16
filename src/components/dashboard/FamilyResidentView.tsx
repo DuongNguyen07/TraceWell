@@ -58,7 +58,7 @@ function isClinicalNote(authorRole: string): boolean {
 
 function timeAgo(timestamp: number): string {
   const diffMinutes = (Date.now() - timestamp) / 60000;
-  if (diffMinutes < 1) return "just now";
+  if (diffMinutes <= 1) return "just now";
   if (diffMinutes < 60) return `${Math.floor(diffMinutes)}m ago`;
   const diffHours = diffMinutes / 60;
   if (diffHours < 24) return `${Math.floor(diffHours)}h ago`;

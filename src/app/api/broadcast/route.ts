@@ -114,17 +114,20 @@ async function persistToDb(event: unknown, authorId?: string): Promise<void> {
 
     } else if (ev.type === "referral" && ev.referral && authorId) {
       const ref = ev.referral as Record<string, unknown>;
+      const recipients = (ref.toRecipients as string[] | undefined) ?? [];
       await prisma.referralNote.upsert({
         where:  { id: ref.id as string },
         update: {},
         create: {
-          id:               ref.id          as string,
+          id:               ref.id as string,
           patientProfileId: patientId,
           authorId,
-          fromName:         ref.fromName    as string,
-          toRecipient:      ref.toRecipient as string,
-          subject:          ref.subject     as string,
-          message:          ref.message     as string,
+          fromName:         ref.fromName as string,
+          toRecipient:      (ref.toRecipient as string | undefined) ?? recipients[0] ?? "",
+          toRecipients:     recipients,
+          referralType:     (ref.referralType as string | undefined) ?? "internal",
+          subject:          ref.subject as string,
+          message:          ref.message as string,
           acknowledged:     (ref.acknowledged  as boolean | undefined) ?? false,
           acknowledgedBy:   (ref.acknowledgedBy as string  | undefined) ?? null,
           acknowledgedAt:   ref.acknowledgedAt ? new Date(ref.acknowledgedAt as number) : null,

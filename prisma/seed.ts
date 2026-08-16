@@ -15,7 +15,9 @@ function dob(year: number, month: number, day: number) { return new Date(year, m
 function daysAgo(n: number, hourOffset = 8): Date {
   const d = new Date();
   d.setDate(d.getDate() - n);
-  d.setHours(hourOffset, Math.floor(Math.random() * 59), 0, 0);
+  // Never produce a future timestamp — if today, cap to 1 hour before now.
+  const safeHour = n === 0 ? Math.min(hourOffset, Math.max(0, new Date().getHours() - 1)) : hourOffset;
+  d.setHours(safeHour, Math.floor(Math.random() * 59), 0, 0);
   return d;
 }
 function rand(min: number, max: number) { return Math.floor(Math.random() * (max - min + 1)) + min; }
@@ -25,12 +27,23 @@ function vary(base: number, spread = 2) { return clamp(base + (Math.random() - 0
 // ─── Hospital staff ────────────────────────────────────────────────────────────
 
 const HOSPITAL_STAFF = [
-  { name: "Sarah Jones",      email: "sarah.jones@stpetershospital.com",   password: "nurse123",   role: "NURSE"   as Role, org: "hospital" },
-  { name: "James Kowalski",   email: "j.kowalski@stpetershospital.com",    password: "nurse123",   role: "NURSE"   as Role, org: "hospital" },
-  { name: "Aisha Okonkwo",    email: "a.okonkwo@stpetershospital.com",     password: "nurse123",   role: "NURSE"   as Role, org: "hospital" },
-  { name: "Dr. Michael Chen", email: "dr.chen@stpetershospital.com",       password: "doctor123",  role: "DOCTOR"  as Role, org: "hospital" },
-  { name: "Dr. Fatima Malik", email: "dr.malik@stpetershospital.com",      password: "doctor123",  role: "DOCTOR"  as Role, org: "hospital" },
-  { name: "Patricia Walsh",   email: "p.walsh@stpetershospital.com",       password: "manager123", role: "MANAGER" as Role, org: "hospital" },
+  // AM shift nurses (7 am – 3 pm)
+  { name: "Sarah Jones",        email: "sarah.jones@stpetershospital.com",     password: "nurse123",   role: "NURSE"   as Role, org: "hospital" },
+  { name: "James Kowalski",     email: "j.kowalski@stpetershospital.com",      password: "nurse123",   role: "NURSE"   as Role, org: "hospital" },
+  { name: "Emma Davies",        email: "e.davies@stpetershospital.com",        password: "nurse123",   role: "NURSE"   as Role, org: "hospital" },
+  // PM shift nurses (3 pm – 11 pm)
+  { name: "Aisha Okonkwo",      email: "a.okonkwo@stpetershospital.com",       password: "nurse123",   role: "NURSE"   as Role, org: "hospital" },
+  { name: "Rebecca Torres",     email: "r.torres@stpetershospital.com",        password: "nurse123",   role: "NURSE"   as Role, org: "hospital" },
+  { name: "Daniel Park",        email: "d.park@stpetershospital.com",          password: "nurse123",   role: "NURSE"   as Role, org: "hospital" },
+  // Night shift nurses (11 pm – 7 am)
+  { name: "Kevin Murphy",       email: "k.murphy@stpetershospital.com",        password: "nurse123",   role: "NURSE"   as Role, org: "hospital" },
+  { name: "Nina Walsh",         email: "n.walsh@stpetershospital.com",         password: "nurse123",   role: "NURSE"   as Role, org: "hospital" },
+  // Doctors
+  { name: "Dr. Michael Chen",   email: "dr.chen@stpetershospital.com",         password: "doctor123",  role: "DOCTOR"  as Role, org: "hospital" },
+  { name: "Dr. Fatima Malik",   email: "dr.malik@stpetershospital.com",        password: "doctor123",  role: "DOCTOR"  as Role, org: "hospital" },
+  { name: "Dr. Raj Sundaram",   email: "dr.sundaram@stpetershospital.com",     password: "doctor123",  role: "DOCTOR"  as Role, org: "hospital" },
+  { name: "Dr. Emma Lawson",    email: "dr.lawson@stpetershospital.com",       password: "doctor123",  role: "DOCTOR"  as Role, org: "hospital" },
+  { name: "Patricia Walsh",     email: "p.walsh@stpetershospital.com",         password: "manager123", role: "MANAGER" as Role, org: "hospital" },
 ];
 
 const HOSPITAL_PATIENTS = [
@@ -101,13 +114,26 @@ const HOSPITAL_FAMILY = [
 // ─── Aged Care staff ───────────────────────────────────────────────────────────
 
 const AGED_CARE_STAFF = [
-  { name: "Mary Nguyen",      email: "mary.nguyen@sunriseagedcare.com.au",   password: "nurse123",   role: "NURSE"   as Role, org: "agedcare" },
-  { name: "Tom Bradley",      email: "t.bradley@sunriseagedcare.com.au",     password: "nurse123",   role: "NURSE"   as Role, org: "agedcare" },
-  { name: "Linda Santos",     email: "l.santos@sunriseagedcare.com.au",      password: "carer123",   role: "CARER"   as Role, org: "agedcare" },
-  { name: "Marcus Webb",      email: "m.webb@sunriseagedcare.com.au",        password: "carer123",   role: "CARER"   as Role, org: "agedcare" },
-  { name: "Judy Kim",         email: "j.kim@sunriseagedcare.com.au",         password: "carer123",   role: "CARER"   as Role, org: "agedcare" },
-  { name: "Dr. Anita Patel",  email: "dr.patel@sunriseagedcare.com.au",      password: "doctor123",  role: "DOCTOR"  as Role, org: "agedcare" },
-  { name: "James Wilson",     email: "j.wilson@sunriseagedcare.com.au",      password: "manager123", role: "MANAGER" as Role, org: "agedcare" },
+  // AM shift nurses (7 am – 3 pm)
+  { name: "Mary Nguyen",        email: "mary.nguyen@sunriseagedcare.com.au",    password: "nurse123",   role: "NURSE"   as Role, org: "agedcare" },
+  { name: "Fiona Brennan",      email: "f.brennan@sunriseagedcare.com.au",      password: "nurse123",   role: "NURSE"   as Role, org: "agedcare" },
+  // PM shift nurses (3 pm – 11 pm)
+  { name: "Tom Bradley",        email: "t.bradley@sunriseagedcare.com.au",      password: "nurse123",   role: "NURSE"   as Role, org: "agedcare" },
+  { name: "Priya Sharma",       email: "p.sharma@sunriseagedcare.com.au",       password: "nurse123",   role: "NURSE"   as Role, org: "agedcare" },
+  // Night shift nurse
+  { name: "Chen Wei",           email: "c.wei@sunriseagedcare.com.au",          password: "nurse123",   role: "NURSE"   as Role, org: "agedcare" },
+  // AM carers
+  { name: "Linda Santos",       email: "l.santos@sunriseagedcare.com.au",       password: "carer123",   role: "CARER"   as Role, org: "agedcare" },
+  { name: "Judy Kim",           email: "j.kim@sunriseagedcare.com.au",          password: "carer123",   role: "CARER"   as Role, org: "agedcare" },
+  // PM carers
+  { name: "Marcus Webb",        email: "m.webb@sunriseagedcare.com.au",         password: "carer123",   role: "CARER"   as Role, org: "agedcare" },
+  { name: "Rosa Delgado",       email: "r.delgado@sunriseagedcare.com.au",      password: "carer123",   role: "CARER"   as Role, org: "agedcare" },
+  // Night carer
+  { name: "Ahmed Hassan",       email: "a.hassan@sunriseagedcare.com.au",       password: "carer123",   role: "CARER"   as Role, org: "agedcare" },
+  // Doctors
+  { name: "Dr. Anita Patel",    email: "dr.patel@sunriseagedcare.com.au",       password: "doctor123",  role: "DOCTOR"  as Role, org: "agedcare" },
+  { name: "Dr. Samuel Obi",     email: "dr.obi@sunriseagedcare.com.au",         password: "doctor123",  role: "DOCTOR"  as Role, org: "agedcare" },
+  { name: "James Wilson",       email: "j.wilson@sunriseagedcare.com.au",       password: "manager123", role: "MANAGER" as Role, org: "agedcare" },
 ];
 
 const AGED_CARE_PATIENTS = [
@@ -177,19 +203,30 @@ const AGED_CARE_FAMILY = [
 
 // ─── Clinical data generators ──────────────────────────────────────────────────
 
-function careNotes(patientName: string, authorName: string, authorLabel: string): { content: string; daysBack: number; hour: number; type?: CareNoteType }[] {
-  const n = patientName.split(" ")[0];
+// Each entry carries a shiftSlot so we can pick the right nurse author.
+// slot 0 = AM (7–14), slot 1 = PM (15–22), slot 2 = Night (23/0–6)
+type NoteTemplate = { content: string; daysBack: number; hour: number; slot: 0 | 1 | 2 };
+
+function careNoteTemplates(n: string): NoteTemplate[] {
   return [
-    { content: `${n} settled overnight. No complaints of pain. Encouraged oral fluids. Obs stable.`,                             daysBack: 0,  hour: 7  },
-    { content: `Assisted ${n} with morning care. Mood appears brighter — engaged in conversation. Appetite improving.`,           daysBack: 1,  hour: 9  },
-    { content: `${n} reported some discomfort this afternoon. Administered analgesia as charted. Will monitor. Family visited.`,  daysBack: 2,  hour: 14 },
-    { content: `Night round — ${n} sleeping comfortably. No incidents to report. Fluid balance within expected range.`,           daysBack: 3,  hour: 22 },
-    { content: `${n} participated in morning exercises. Good engagement, tolerated well.`,                                        daysBack: 5,  hour: 10 },
-    { content: `Handover note: ${n} has been more withdrawn today. Consider checking in with family.`,                            daysBack: 7,  hour: 15 },
-    { content: `${n} ate well at lunch. Walked to the window with minimal assistance. Good progress.`,                            daysBack: 9,  hour: 12 },
-    { content: `Medications administered on time. ${n} asked about discharge timeline — relayed to medical team.`,                daysBack: 11, hour: 8  },
-    { content: `${n} had a disrupted night, needed repositioning twice. No skin breakdown noted.`,                                daysBack: 14, hour: 23 },
-    { content: `Routine check — vitals stable, no acute concerns. ${n} in good spirits.`,                                        daysBack: 17, hour: 10 },
+    { content: `${n} settled overnight. No complaints of pain. Encouraged oral fluids. Obs stable.`,                                      daysBack: 0,  hour: 2,  slot: 2 },
+    { content: `Handover from night — ${n} had a restful night. Handing over to AM team.`,                                                daysBack: 0,  hour: 7,  slot: 0 },
+    { content: `Assisted ${n} with morning care. Mood appears brighter today — engaged in conversation. Appetite improving.`,              daysBack: 0,  hour: 9,  slot: 0 },
+    { content: `Medications administered on time. ${n} tolerating oral intake well. No acute concerns.`,                                   daysBack: 1,  hour: 8,  slot: 0 },
+    { content: `${n} reported some discomfort this afternoon. Administered analgesia as charted. Will monitor. Family visited at 3 pm.`,   daysBack: 1,  hour: 15, slot: 1 },
+    { content: `PM handover: ${n} settled after analgesia, obs stable. Handing to night team.`,                                           daysBack: 1,  hour: 22, slot: 1 },
+    { content: `Night round — ${n} sleeping comfortably. No incidents to report. Fluid balance within expected range.`,                    daysBack: 2,  hour: 1,  slot: 2 },
+    { content: `${n} participated in morning exercises with physio. Good engagement, tolerated well.`,                                     daysBack: 3,  hour: 10, slot: 0 },
+    { content: `Lunchtime: ${n} ate well. Walked to the window with minimal assistance. Good progress.`,                                   daysBack: 3,  hour: 12, slot: 0 },
+    { content: `Afternoon obs completed. ${n} asked about discharge timeline — relayed to medical team for review.`,                       daysBack: 4,  hour: 16, slot: 1 },
+    { content: `PM check: ${n} resting comfortably. No new complaints. IV site reviewed — no signs of infiltration.`,                     daysBack: 4,  hour: 19, slot: 1 },
+    { content: `${n} had a disrupted night, needed repositioning twice. No skin breakdown noted. Comfort measures applied.`,               daysBack: 5,  hour: 3,  slot: 2 },
+    { content: `Handover note: ${n} has been more withdrawn today. Encouraged fluids. Consider checking in with family re: mood.`,         daysBack: 6,  hour: 14, slot: 0 },
+    { content: `${n} brighter this afternoon following family visit. Ate full dinner. Good overnight.`,                                    daysBack: 7,  hour: 17, slot: 1 },
+    { content: `Routine AM check — vitals stable, no acute concerns. ${n} in good spirits.`,                                              daysBack: 9,  hour: 8,  slot: 0 },
+    { content: `${n} required assistance with mobilisation today. Physio referral discussed with medical team.`,                           daysBack: 11, hour: 11, slot: 0 },
+    { content: `Night uneventful. ${n} slept through most of the night. Morning team has been updated.`,                                  daysBack: 13, hour: 6,  slot: 2 },
+    { content: `${n} in good spirits. Chatted about going home. Plan reviewed with family by doctor this afternoon.`,                      daysBack: 15, hour: 15, slot: 1 },
   ];
 }
 
@@ -252,8 +289,9 @@ async function seedFacility(
   staff: typeof HOSPITAL_STAFF,
   patients: typeof HOSPITAL_PATIENTS,
   family: typeof HOSPITAL_FAMILY,
-  primaryNurseEmail: string,
-  primaryDoctorEmail: string,
+  // One nurse email per shift slot: [AM, PM, Night]
+  nurseEmailsByShift: [string, string, string],
+  doctorEmails: string[],
   authorRoleLabel: string,
 ) {
   console.log(`\n${label}`);
@@ -263,8 +301,14 @@ async function seedFacility(
     console.log(`  ✓ ${s.role.padEnd(13)} ${s.email}`);
   }
 
-  const nurseUser  = await prisma.user.findUnique({ where: { email: primaryNurseEmail  } });
-  const doctorUser = await prisma.user.findUnique({ where: { email: primaryDoctorEmail } });
+  const [amNurse, pmNurse, nightNurse] = await Promise.all(
+    nurseEmailsByShift.map((e) => prisma.user.findUnique({ where: { email: e } }))
+  );
+  const nurseBySlot = [amNurse, pmNurse, nightNurse];
+
+  const doctors = (await Promise.all(
+    doctorEmails.map((e) => prisma.user.findUnique({ where: { email: e } }))
+  )).filter(Boolean) as NonNullable<typeof amNurse>[];
 
   const patientProfiles: { id: string; patientName: string }[] = [];
 
@@ -285,26 +329,29 @@ async function seedFacility(
     for (const m of p.profile.medications)
       await prisma.medication.create({ data: { patientProfileId: pp.id, name: m.name, dose: m.dose, frequency: m.frequency } });
 
-    // Diagnoses
+    // Diagnoses — rotate doctors so different doctors author different diagnoses
     await prisma.diagnosis.deleteMany({ where: { patientProfileId: pp.id } });
-    for (const d of p.profile.diagnoses)
-      await prisma.diagnosis.create({ data: { patientProfileId: pp.id, condition: d.condition, status: d.status, authorRole: doctorUser ? `${doctorUser.name} (Doctor)` : "Doctor" } });
-
-    // Care notes (clinical)
-    if (nurseUser) {
-      await prisma.careNote.deleteMany({ where: { patientProfileId: pp.id, type: { in: ["TEXT", "IMAGE", "VOICE"] } } });
-      for (const note of careNotes(p.user.name, nurseUser.name, authorRoleLabel))
-        await prisma.careNote.create({
-          data: { patientProfileId: pp.id, authorId: nurseUser.id, authorRole: `${nurseUser.name} (${authorRoleLabel})`, type: CareNoteType.TEXT, content: note.content, createdAt: daysAgo(note.daysBack, note.hour) },
-        });
+    for (let i = 0; i < p.profile.diagnoses.length; i++) {
+      const doc = doctors[i % doctors.length];
+      await prisma.diagnosis.create({ data: { patientProfileId: pp.id, condition: p.profile.diagnoses[i].condition, status: p.profile.diagnoses[i].status, authorRole: doc ? `${doc.name} (Doctor)` : "Doctor" } });
     }
 
-    // Family update notes
-    if (nurseUser) {
+    // Care notes — each note is authored by the nurse on that shift
+    await prisma.careNote.deleteMany({ where: { patientProfileId: pp.id, type: { in: ["TEXT", "IMAGE", "VOICE"] } } });
+    for (const note of careNoteTemplates(p.user.name.split(" ")[0])) {
+      const author = nurseBySlot[note.slot] ?? amNurse;
+      if (!author) continue;
+      await prisma.careNote.create({
+        data: { patientProfileId: pp.id, authorId: author.id, authorRole: `${author.name} (${authorRoleLabel})`, type: CareNoteType.TEXT, content: note.content, createdAt: daysAgo(note.daysBack, note.hour) },
+      });
+    }
+
+    // Family update notes — authored by AM nurse
+    if (amNurse) {
       await prisma.careNote.deleteMany({ where: { patientProfileId: pp.id, type: "FAMILY_UPDATE" } });
-      for (const note of familyUpdateNotes(p.user.name, nurseUser.name))
+      for (const note of familyUpdateNotes(p.user.name, amNurse.name))
         await prisma.careNote.create({
-          data: { patientProfileId: pp.id, authorId: nurseUser.id, authorRole: `${nurseUser.name} (${authorRoleLabel})`, type: CareNoteType.FAMILY_UPDATE, content: note.content, createdAt: daysAgo(note.daysBack, 10) },
+          data: { patientProfileId: pp.id, authorId: amNurse.id, authorRole: `${amNurse.name} (${authorRoleLabel})`, type: CareNoteType.FAMILY_UPDATE, content: note.content, createdAt: daysAgo(note.daysBack, 10) },
         });
     }
 
@@ -313,28 +360,38 @@ async function seedFacility(
     for (const w of wellbeingHistory(p.profile.baseline))
       await prisma.wellbeingCheck.create({ data: { patientProfileId: pp.id, mood: w.mood, appetite: w.appetite, mobility: w.mobility, sleep: w.sleep, recordedAt: daysAgo(w.daysBack, 9) } });
 
-    // Vitals (3 weeks)
+    // Vitals — rotate across shift nurses
     await prisma.vitalSigns.deleteMany({ where: { patientProfileId: pp.id } });
-    for (const v of vitalsHistory(21))
+    const vitalEntries = vitalsHistory(21);
+    for (let i = 0; i < vitalEntries.length; i++) {
+      const v = vitalEntries[i];
+      const slot = v.hour >= 7 && v.hour < 15 ? 0 : v.hour >= 15 && v.hour < 23 ? 1 : 2;
+      const vNurse = nurseBySlot[slot] ?? amNurse;
       await prisma.vitalSigns.create({
-        data: { patientProfileId: pp.id, authorRole: nurseUser ? `${nurseUser.name} (${authorRoleLabel})` : authorRoleLabel, systolic: v.systolic, diastolic: v.diastolic, heartRate: v.heartRate, temperature: v.temperature, oxygenSaturation: v.oxygenSaturation, respiratoryRate: v.respiratoryRate, recordedAt: daysAgo(v.daysBack, v.hour) },
+        data: { patientProfileId: pp.id, authorRole: vNurse ? `${vNurse.name} (${authorRoleLabel})` : authorRoleLabel, systolic: v.systolic, diastolic: v.diastolic, heartRate: v.heartRate, temperature: v.temperature, oxygenSaturation: v.oxygenSaturation, respiratoryRate: v.respiratoryRate, recordedAt: daysAgo(v.daysBack, v.hour) },
       });
+    }
 
-    // Medical reports (2 per patient)
+    // Medical reports — authored by different doctors
     await prisma.medicalReport.deleteMany({ where: { patientProfileId: pp.id } });
     const firstName = p.user.name.split(" ")[0];
-    await prisma.medicalReport.create({ data: { patientProfileId: pp.id, title: `${firstName} — Admission blood panel`, type: "Blood Test", content: "FBC: Hb 118 g/L, WBC 7.2×10⁹/L, Plt 224×10⁹/L. HbA1c 7.4%. CRP 12 mg/L. Renal function within normal limits.", authorRole: doctorUser ? `${doctorUser.name} (Doctor)` : "Doctor", createdAt: daysAgo(14, 11) } });
-    await prisma.medicalReport.create({ data: { patientProfileId: pp.id, title: `${firstName} — Chest X-ray review`, type: "X-Ray", content: "Mild cardiomegaly noted. No acute consolidation or pleural effusion. Lung fields clear peripherally. Review in 6 weeks recommended.", authorRole: doctorUser ? `${doctorUser.name} (Doctor)` : "Doctor", createdAt: daysAgo(7, 14) } });
+    const doc0 = doctors[0];
+    const doc1 = doctors[1] ?? doctors[0];
+    await prisma.medicalReport.create({ data: { patientProfileId: pp.id, title: `${firstName} — Admission blood panel`, type: "Blood Test", content: "FBC: Hb 118 g/L, WBC 7.2×10⁹/L, Plt 224×10⁹/L. HbA1c 7.4%. CRP 12 mg/L. Renal function within normal limits.", authorRole: doc0 ? `${doc0.name} (Doctor)` : "Doctor", createdAt: daysAgo(14, 11) } });
+    await prisma.medicalReport.create({ data: { patientProfileId: pp.id, title: `${firstName} — Chest X-ray review`, type: "X-Ray", content: "Mild cardiomegaly noted. No acute consolidation or pleural effusion. Lung fields clear peripherally. Review in 6 weeks recommended.", authorRole: doc1 ? `${doc1.name} (Doctor)` : "Doctor", createdAt: daysAgo(7, 14) } });
   }
 
-  // Referrals (between first two patients)
-  if (doctorUser && patientProfiles.length >= 2) {
+  // Referrals (between first two patients) — different doctors author each
+  const refDoc0 = doctors[0];
+  const refDoc1 = doctors[1] ?? doctors[0];
+  const refDoc2 = doctors[2] ?? doctors[0];
+  if (refDoc0 && patientProfiles.length >= 2) {
     await prisma.referralNote.deleteMany({ where: { patientProfileId: patientProfiles[0].id } });
     await prisma.referralNote.create({
       data: {
         patientProfileId: patientProfiles[0].id,
-        authorId:  doctorUser.id,
-        fromName:  `${doctorUser.name} (Doctor)`,
+        authorId:  refDoc0.id,
+        fromName:  `${refDoc0.name} (Doctor)`,
         toRecipient:  "Endocrinology",
         toRecipients: ["Endocrinology"],
         referralType: "internal",
@@ -347,8 +404,8 @@ async function seedFacility(
     await prisma.referralNote.create({
       data: {
         patientProfileId: patientProfiles[1].id,
-        authorId:  doctorUser.id,
-        fromName:  `${doctorUser.name} (Doctor)`,
+        authorId:  refDoc1.id,
+        fromName:  `${refDoc1.name} (Doctor)`,
         toRecipient:  "Physiotherapy",
         toRecipients: ["Physiotherapy", "Occupational Therapy"],
         referralType: "internal",
@@ -356,7 +413,7 @@ async function seedFacility(
         message:   "Requesting joint physio and OT review for mobility aids and home environment assessment prior to discharge.",
         shareCode: "REF-" + Math.random().toString(36).slice(2, 8).toUpperCase(),
         acknowledged: true,
-        acknowledgedBy: nurseUser ? `${nurseUser.name} (${authorRoleLabel})` : authorRoleLabel,
+        acknowledgedBy: amNurse ? `${amNurse.name} (${authorRoleLabel})` : authorRoleLabel,
         acknowledgedAt: daysAgo(2, 9),
         createdAt: daysAgo(6, 14),
       },
@@ -366,8 +423,8 @@ async function seedFacility(
       await prisma.referralNote.create({
         data: {
           patientProfileId: patientProfiles[2].id,
-          authorId:  doctorUser.id,
-          fromName:  `${doctorUser.name} (Doctor)`,
+          authorId:  refDoc2.id,
+          fromName:  `${refDoc2.name} (Doctor)`,
           toRecipient:  "St Vincent's Cardiology",
           toRecipients: ["St Vincent's Cardiology"],
           referralType: "external",
@@ -379,13 +436,13 @@ async function seedFacility(
     }
   }
 
-  // Chat messages (on first patient)
-  if (patientProfiles.length > 0 && nurseUser) {
+  // Chat messages (on first patient) — authored by AM nurse
+  if (patientProfiles.length > 0 && amNurse) {
     await prisma.chatMessage.deleteMany({ where: { patientProfileId: patientProfiles[0].id } });
     const n = patientProfiles[0].patientName.split(" ")[0];
-    await prisma.chatMessage.create({ data: { patientProfileId: patientProfiles[0].id, authorName: nurseUser.name, authorRole: `${nurseUser.name} (${authorRoleLabel})`, content: `Hi family — ${n} is doing well today. Good appetite at lunch and no complaints.`, createdAt: daysAgo(3, 11) } });
+    await prisma.chatMessage.create({ data: { patientProfileId: patientProfiles[0].id, authorName: amNurse.name, authorRole: `${amNurse.name} (${authorRoleLabel})`, content: `Hi family — ${n} is doing well today. Good appetite at lunch and no complaints.`, createdAt: daysAgo(3, 11) } });
     await prisma.chatMessage.create({ data: { patientProfileId: patientProfiles[0].id, authorName: "Family", authorRole: "Family", content: "Thank you for the update! Can we bring in some home-cooked food tomorrow?", createdAt: daysAgo(2, 19) } });
-    await prisma.chatMessage.create({ data: { patientProfileId: patientProfiles[0].id, authorName: nurseUser.name, authorRole: `${nurseUser.name} (${authorRoleLabel})`, content: "Absolutely — soft foods are fine, just avoid anything salty or high in sugar given the dietary restrictions.", createdAt: daysAgo(2, 20) } });
+    await prisma.chatMessage.create({ data: { patientProfileId: patientProfiles[0].id, authorName: amNurse.name, authorRole: `${amNurse.name} (${authorRoleLabel})`, content: "Absolutely — soft foods are fine, just avoid anything salty or high in sugar given the dietary restrictions.", createdAt: daysAgo(2, 20) } });
     await prisma.chatMessage.create({ data: { patientProfileId: patientProfiles[0].id, authorName: "Family", authorRole: "Family", content: "Understood! We'll bring congee. See you tomorrow around 4 pm.", createdAt: daysAgo(1, 9) } });
   }
 
@@ -418,27 +475,38 @@ async function main() {
   await seedFacility(
     "🏥  St Peter's Hospital",
     HOSPITAL_STAFF, HOSPITAL_PATIENTS, HOSPITAL_FAMILY,
-    "sarah.jones@stpetershospital.com",
-    "dr.chen@stpetershospital.com",
+    ["sarah.jones@stpetershospital.com", "a.okonkwo@stpetershospital.com", "k.murphy@stpetershospital.com"],
+    ["dr.chen@stpetershospital.com", "dr.malik@stpetershospital.com", "dr.sundaram@stpetershospital.com", "dr.lawson@stpetershospital.com"],
     "Nurse",
   );
 
   await seedFacility(
     "🌅  Sunrise Aged Care",
     AGED_CARE_STAFF, AGED_CARE_PATIENTS, AGED_CARE_FAMILY,
-    "mary.nguyen@sunriseagedcare.com.au",
-    "dr.patel@sunriseagedcare.com.au",
-    "Carer",
+    ["mary.nguyen@sunriseagedcare.com.au", "t.bradley@sunriseagedcare.com.au", "c.wei@sunriseagedcare.com.au"],
+    ["dr.patel@sunriseagedcare.com.au", "dr.obi@sunriseagedcare.com.au"],
+    "Nurse",
   );
 
   console.log("\n✅  Seed complete.\n");
   console.log("── Demo credentials ──────────────────────────────────────────────────────");
   console.log("  🏥 St Peter's Hospital  (org: hospital)");
+  console.log("    — AM nurses (7am–3pm) —");
   console.log("    Nurse:    sarah.jones@stpetershospital.com    / nurse123");
   console.log("    Nurse:    j.kowalski@stpetershospital.com     / nurse123");
+  console.log("    Nurse:    e.davies@stpetershospital.com       / nurse123");
+  console.log("    — PM nurses (3pm–11pm) —");
   console.log("    Nurse:    a.okonkwo@stpetershospital.com      / nurse123");
+  console.log("    Nurse:    r.torres@stpetershospital.com       / nurse123");
+  console.log("    Nurse:    d.park@stpetershospital.com         / nurse123");
+  console.log("    — Night nurses (11pm–7am) —");
+  console.log("    Nurse:    k.murphy@stpetershospital.com       / nurse123");
+  console.log("    Nurse:    n.walsh@stpetershospital.com        / nurse123");
+  console.log("    — Doctors —");
   console.log("    Doctor:   dr.chen@stpetershospital.com        / doctor123");
   console.log("    Doctor:   dr.malik@stpetershospital.com       / doctor123");
+  console.log("    Doctor:   dr.sundaram@stpetershospital.com    / doctor123");
+  console.log("    Doctor:   dr.lawson@stpetershospital.com      / doctor123");
   console.log("    Manager:  p.walsh@stpetershospital.com        / manager123");
   console.log("    Patient:  amara.chen@stpetershospital.com     / patient123");
   console.log("    Patient:  david.osei@stpetershospital.com     / patient123");
@@ -451,18 +519,31 @@ async function main() {
   console.log("    Family:   claire.burke@gmail.com              / family123");
   console.log("");
   console.log("  🌅 Sunrise Aged Care  (org: agedcare)");
+  console.log("    — AM nurses (7am–3pm) —");
   console.log("    Nurse:    mary.nguyen@sunriseagedcare.com.au  / nurse123");
+  console.log("    Nurse:    f.brennan@sunriseagedcare.com.au    / nurse123");
+  console.log("    — PM nurses (3pm–11pm) —");
   console.log("    Nurse:    t.bradley@sunriseagedcare.com.au    / nurse123");
+  console.log("    Nurse:    p.sharma@sunriseagedcare.com.au     / nurse123");
+  console.log("    — Night nurse —");
+  console.log("    Nurse:    c.wei@sunriseagedcare.com.au        / nurse123");
+  console.log("    — AM carers —");
   console.log("    Carer:    l.santos@sunriseagedcare.com.au     / carer123");
-  console.log("    Carer:    m.webb@sunriseagedcare.com.au       / carer123");
   console.log("    Carer:    j.kim@sunriseagedcare.com.au        / carer123");
+  console.log("    — PM carers —");
+  console.log("    Carer:    m.webb@sunriseagedcare.com.au       / carer123");
+  console.log("    Carer:    r.delgado@sunriseagedcare.com.au    / carer123");
+  console.log("    — Night carer —");
+  console.log("    Carer:    a.hassan@sunriseagedcare.com.au     / carer123");
+  console.log("    — Doctors —");
   console.log("    Doctor:   dr.patel@sunriseagedcare.com.au     / doctor123");
+  console.log("    Doctor:   dr.obi@sunriseagedcare.com.au       / doctor123");
   console.log("    Manager:  j.wilson@sunriseagedcare.com.au     / manager123");
   console.log("    Resident: margaret.wu@sunriseagedcare.com.au  / patient123");
-  console.log("    Resident: robert.nguyen@sunriseagedcare.com.au/ patient123");
-  console.log("    Resident: elsie.campbell@sunriseagedcare.com.au/patient123");
+  console.log("    Resident: robert.nguyen@sunriseagedcare.com.au / patient123");
+  console.log("    Resident: elsie.campbell@sunriseagedcare.com.au / patient123");
   console.log("    Resident: arthur.reid@sunriseagedcare.com.au  / patient123");
-  console.log("    Resident: dorothy.mason@sunriseagedcare.com.au/ patient123");
+  console.log("    Resident: dorothy.mason@sunriseagedcare.com.au / patient123");
   console.log("    Family:   tom.wu@gmail.com                    / family123");
   console.log("    Family:   minh.nguyen@gmail.com               / family123");
   console.log("    Family:   grace.reid@gmail.com                / family123");

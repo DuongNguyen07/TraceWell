@@ -171,6 +171,54 @@ type DischargeSummary = {
 
 const EMPTY_PROFILE: Profile = { preferences: "", routine: "", communicationStyle: "" };
 
+// ---------- Carer-specific types ----------
+type FallRiskLevel = "Low" | "Medium" | "High";
+
+type FallRiskAssessment = {
+  id: string;
+  level: FallRiskLevel;
+  factors: string[];
+  notes: string;
+  authorRole: string;
+  timestamp: number;
+};
+
+const FALL_RISK_FACTORS = [
+  "History of falls",
+  "Impaired mobility",
+  "Medication side effects",
+  "Impaired vision",
+  "Confusion / cognitive impairment",
+  "Environmental hazards",
+];
+
+type ScheduleItem = {
+  id: string;
+  task: string;
+  time: string;
+  notes?: string;
+  authorRole: string;
+  timestamp: number;
+  done: boolean;
+};
+
+type FamilyContact = {
+  id: string;
+  name: string;
+  relationship: string;
+  phone: string;
+  email?: string;
+};
+
+type CarerProfile = {
+  name: string;
+  qualifications: string;
+  phone: string;
+  email: string;
+};
+
+const EMPTY_CARER_PROFILE: CarerProfile = { name: "", qualifications: "", phone: "", email: "" };
+
 // ================================================================
 // DEMO DATA
 // Stand-in for a real database — see loadFromStorage/saveToStorage below
@@ -639,6 +687,7 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
   const isPatientRole = role === "patient";
   const isDoctorRole  = role === "doctor";
   const isManagerRole = role === "manager" || role === "admin";
+  const isCarerRole   = role === "carer";
 
   // ---------- Core data state ----------
   const [hydrated, setHydrated] = useState(false);
@@ -652,6 +701,12 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
   const [diagnosesByPatient, setDiagnosesByPatient] = useState<Record<string, Diagnosis[]>>({});
   // Discharge summary drafts per patient.
   const [dischargeSummariesByPatient, setDischargeSummariesByPatient] = useState<Record<string, DischargeSummary[]>>({});
+  const [fallRiskByPatient, setFallRiskByPatient] = useState<Record<string, FallRiskAssessment[]>>({});
+  const [scheduleByPatient, setScheduleByPatient] = useState<Record<string, ScheduleItem[]>>({});
+  const [familyContactsByPatient, setFamilyContactsByPatient] = useState<Record<string, FamilyContact[]>>({});
+  const [carerProfile, setCarerProfile] = useState<CarerProfile>(EMPTY_CARER_PROFILE);
+  const [carerProfileOpen, setCarerProfileOpen] = useState(false);
+  const [carerProfileDraft, setCarerProfileDraft] = useState<CarerProfile>(EMPTY_CARER_PROFILE);
   // Family chat messages per patient — shared thread visible to all family members and staff.
   const [chatMessagesByPatient, setChatMessagesByPatient] = useState<Record<string, ChatMessage[]>>({});
   // Draft text for the staff-side family chat input (separate from FamilyResidentView's own input).
@@ -801,6 +856,23 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
   const [diagnosisStatus, setDiagnosisStatus] = useState<ProblemStatus>("Active");
   const [diagnosisNotes, setDiagnosisNotes] = useState("");
 
+  // ---------- Carer tools form state ----------
+  const [fallRiskFormOpen, setFallRiskFormOpen] = useState(false);
+  const [fallRiskLevel, setFallRiskLevel] = useState<FallRiskLevel>("Low");
+  const [fallRiskFactors, setFallRiskFactors] = useState<string[]>([]);
+  const [fallRiskNotes, setFallRiskNotes] = useState("");
+
+  const [scheduleFormOpen, setScheduleFormOpen] = useState(false);
+  const [scheduleTask, setScheduleTask] = useState("");
+  const [scheduleTime, setScheduleTime] = useState("");
+  const [scheduleNotes, setScheduleNotes] = useState("");
+
+  const [familyFormOpen, setFamilyFormOpen] = useState(false);
+  const [familyName, setFamilyName] = useState("");
+  const [familyRelationship, setFamilyRelationship] = useState("");
+  const [familyPhone, setFamilyPhone] = useState("");
+  const [familyEmail, setFamilyEmail] = useState("");
+
   // ================================================================
   // DATA LOADING & PERSISTENCE
   //
@@ -854,6 +926,9 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
     setDiagnosesByPatient(loadFromStorage(`tracewell:${org}:diagnoses`, {}));
     setDischargeSummariesByPatient(loadFromStorage(`tracewell:${org}:discharge`, {}));
     setChatMessagesByPatient(loadFromStorage(`tracewell:${org}:chat`, {}));
+    setFallRiskByPatient(loadFromStorage(`tracewell:${org}:fallrisk`, {}));
+    setScheduleByPatient(loadFromStorage(`tracewell:${org}:schedule`, {}));
+    setFamilyContactsByPatient(loadFromStorage(`tracewell:${org}:familycontacts`, {}));
     const storedNotifs = loadFromStorage<InAppNotification[]>(`tracewell:${org}:notifications`, []);
     setNotifications(storedNotifs);
     // Pre-seed so existing notifications never trigger toast pop-ups
@@ -933,6 +1008,29 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
   useEffect(() => {
     if (hydrated && org) saveToStorage(`tracewell:${org}:chat`, chatMessagesByPatient);
   }, [chatMessagesByPatient, org, hydrated]);
+
+  useEffect(() => {
+    if (hydrated && org) saveToStorage(`tracewell:${org}:fallrisk`, fallRiskByPatient);
+  }, [fallRiskByPatient, org, hydrated]);
+
+  useEffect(() => {
+    if (hydrated && org) saveToStorage(`tracewell:${org}:schedule`, scheduleByPatient);
+  }, [scheduleByPatient, org, hydrated]);
+
+  useEffect(() => {
+    if (hydrated && org) saveToStorage(`tracewell:${org}:familycontacts`, familyContactsByPatient);
+  }, [familyContactsByPatient, org, hydrated]);
+
+  useEffect(() => {
+    if (!isCarerRole) return;
+    const key = `tracewell:carerProfile:${staffName || "anon"}`;
+    setCarerProfile(loadFromStorage(key, EMPTY_CARER_PROFILE));
+  }, [isCarerRole, staffName]);
+
+  useEffect(() => {
+    if (!isCarerRole || !hydrated) return;
+    saveToStorage(`tracewell:carerProfile:${staffName || "anon"}`, carerProfile);
+  }, [carerProfile, isCarerRole, staffName, hydrated]);
 
   useEffect(() => {
     if (hydrated && org) saveToStorage(`tracewell:${org}:notifications`, notifications);
@@ -2166,6 +2264,115 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
     }));
   }
 
+  // ---------- Carer tools: fall risk, care schedule, family contacts ----------
+
+  function toggleFallRiskFactor(factor: string) {
+    setFallRiskFactors((prev) => (prev.includes(factor) ? prev.filter((f) => f !== factor) : [...prev, factor]));
+  }
+
+  function saveFallRiskAssessment() {
+    if (!selectedPatient) return;
+    const entry: FallRiskAssessment = {
+      id: crypto.randomUUID(),
+      level: fallRiskLevel,
+      factors: fallRiskFactors,
+      notes: fallRiskNotes.trim(),
+      authorRole: displayIdentity,
+      timestamp: Date.now(),
+    };
+    setFallRiskByPatient((prev) => ({ ...prev, [selectedPatient.id]: [...(prev[selectedPatient.id] ?? []), entry] }));
+    setFallRiskFormOpen(false);
+    setFallRiskLevel("Low");
+    setFallRiskFactors([]);
+    setFallRiskNotes("");
+  }
+
+  function deleteFallRiskAssessment(assessmentId: string) {
+    if (!selectedPatient) return;
+    setFallRiskByPatient((prev) => ({
+      ...prev,
+      [selectedPatient.id]: (prev[selectedPatient.id] ?? []).filter((f) => f.id !== assessmentId),
+    }));
+  }
+
+  function fallRiskBadgeStyle(level: FallRiskLevel): string {
+    if (level === "High") return "bg-red-50 text-destructive";
+    if (level === "Medium") return "bg-amber-100 text-amber-800";
+    return "bg-teal-soft text-teal";
+  }
+
+  function addScheduleItem() {
+    if (!selectedPatient || !scheduleTask.trim()) return;
+    const entry: ScheduleItem = {
+      id: crypto.randomUUID(),
+      task: scheduleTask.trim(),
+      time: scheduleTime.trim(),
+      notes: scheduleNotes.trim() || undefined,
+      authorRole: displayIdentity,
+      timestamp: Date.now(),
+      done: false,
+    };
+    setScheduleByPatient((prev) => ({
+      ...prev,
+      [selectedPatient.id]: [...(prev[selectedPatient.id] ?? []), entry].sort((a, b) => a.time.localeCompare(b.time)),
+    }));
+    setScheduleFormOpen(false);
+    setScheduleTask("");
+    setScheduleTime("");
+    setScheduleNotes("");
+  }
+
+  function removeScheduleItem(itemId: string) {
+    if (!selectedPatient) return;
+    setScheduleByPatient((prev) => ({
+      ...prev,
+      [selectedPatient.id]: (prev[selectedPatient.id] ?? []).filter((s) => s.id !== itemId),
+    }));
+  }
+
+  function toggleScheduleDone(itemId: string) {
+    if (!selectedPatient) return;
+    setScheduleByPatient((prev) => ({
+      ...prev,
+      [selectedPatient.id]: (prev[selectedPatient.id] ?? []).map((s) => (s.id === itemId ? { ...s, done: !s.done } : s)),
+    }));
+  }
+
+  function addFamilyContact() {
+    if (!selectedPatient || !familyName.trim()) return;
+    const entry: FamilyContact = {
+      id: crypto.randomUUID(),
+      name: familyName.trim(),
+      relationship: familyRelationship.trim(),
+      phone: familyPhone.trim(),
+      email: familyEmail.trim() || undefined,
+    };
+    setFamilyContactsByPatient((prev) => ({ ...prev, [selectedPatient.id]: [...(prev[selectedPatient.id] ?? []), entry] }));
+    setFamilyFormOpen(false);
+    setFamilyName("");
+    setFamilyRelationship("");
+    setFamilyPhone("");
+    setFamilyEmail("");
+  }
+
+  function removeFamilyContact(contactId: string) {
+    if (!selectedPatient) return;
+    setFamilyContactsByPatient((prev) => ({
+      ...prev,
+      [selectedPatient.id]: (prev[selectedPatient.id] ?? []).filter((c) => c.id !== contactId),
+    }));
+  }
+
+  function openCarerProfile() {
+    setCarerProfileDraft(carerProfile);
+    setCarerProfileOpen(true);
+  }
+
+  function saveCarerProfile() {
+    setCarerProfile(carerProfileDraft);
+    setCarerProfileOpen(false);
+  }
+
   function statusBadgeStyle(status: ProblemStatus): string {
     if (status === "Active") return "bg-amber-100 text-amber-800";
     if (status === "Chronic") return "bg-secondary text-ink";
@@ -2283,6 +2490,12 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
               )}
             </div>
 
+            {isCarerRole && (
+              <button onClick={openCarerProfile} className="rounded-full border border-border px-4 py-2 text-sm text-ink-soft hover:bg-secondary">
+                My profile
+              </button>
+            )}
+
             <button onClick={handleSignOut} className="rounded-full px-4 py-2 text-sm text-ink-soft hover:bg-secondary">
               Sign out
             </button>
@@ -2370,6 +2583,9 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
                     setEditingSummaryId(null);
                     setEditSummaryContent("");
                     setStaffChatDraft("");
+                    setFallRiskFormOpen(false);
+                    setScheduleFormOpen(false);
+                    setFamilyFormOpen(false);
                   }}
                   className={`rounded-lg px-3 py-2 text-left transition-colors ${isSelected ? "bg-teal-soft" : "hover:bg-secondary"}`}
                 >
@@ -2508,6 +2724,184 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
                     <p className="text-sm text-ink-soft">No vital signs recorded yet.</p>
                   )}
                 </div>
+
+                {isCarerRole && (() => {
+                  const fallRiskHistory = fallRiskByPatient[selectedPatient.id] ?? [];
+                  const latestFallRisk = fallRiskHistory.length > 0 ? fallRiskHistory[fallRiskHistory.length - 1] : undefined;
+                  const scheduleItems = [...(scheduleByPatient[selectedPatient.id] ?? [])].sort((a, b) => a.time.localeCompare(b.time));
+                  const familyContacts = familyContactsByPatient[selectedPatient.id] ?? [];
+                  return (
+                    <>
+                      {/* Fall risk */}
+                      <div className="mt-6 rounded-xl border border-border bg-background p-4">
+                        <div className="mb-3 flex items-center justify-between">
+                          <span className="text-sm font-semibold text-ink">Fall risk</span>
+                          {!fallRiskFormOpen && (
+                            <button onClick={() => setFallRiskFormOpen(true)} className="text-xs font-medium text-teal hover:underline">+ New assessment</button>
+                          )}
+                        </div>
+                        {fallRiskFormOpen && (
+                          <div className="mb-4 flex flex-col gap-3 rounded-lg border border-border p-3">
+                            <div className="flex flex-col gap-1">
+                              <label className="text-xs text-muted-foreground">Risk level</label>
+                              <div className="flex gap-2">
+                                {(["Low", "Medium", "High"] as FallRiskLevel[]).map((lvl) => (
+                                  <button key={lvl} onClick={() => setFallRiskLevel(lvl)}
+                                    className={`rounded-full px-3 py-1.5 text-xs font-medium ${fallRiskLevel === lvl ? fallRiskBadgeStyle(lvl) : "bg-secondary text-ink-soft"}`}>
+                                    {lvl}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                            <div className="flex flex-col gap-1">
+                              <label className="text-xs text-muted-foreground">Contributing factors</label>
+                              <div className="flex flex-wrap gap-1.5">
+                                {FALL_RISK_FACTORS.map((factor) => (
+                                  <button key={factor} onClick={() => toggleFallRiskFactor(factor)}
+                                    className={`rounded-full px-2.5 py-1 text-xs ${fallRiskFactors.includes(factor) ? "bg-teal-soft text-teal" : "bg-secondary text-ink-soft"}`}>
+                                    {factor}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                            <textarea value={fallRiskNotes} onChange={(e) => setFallRiskNotes(e.target.value)} rows={2}
+                              placeholder="Additional notes (optional)"
+                              className="resize-none rounded-lg border border-border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring" />
+                            <div className="flex gap-2">
+                              <button onClick={saveFallRiskAssessment} className="rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Save assessment</button>
+                              <button onClick={() => setFallRiskFormOpen(false)} className="rounded-full px-4 py-2 text-sm text-ink-soft hover:bg-secondary">Cancel</button>
+                            </div>
+                          </div>
+                        )}
+                        {latestFallRisk ? (
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${fallRiskBadgeStyle(latestFallRisk.level)}`}>{latestFallRisk.level} risk</span>
+                              <span className="text-xs text-muted-foreground">{formatDateTime(latestFallRisk.timestamp)} · {latestFallRisk.authorRole}</span>
+                            </div>
+                            {latestFallRisk.factors.length > 0 && <p className="mt-2 text-sm text-ink">{latestFallRisk.factors.join(", ")}</p>}
+                            {latestFallRisk.notes && <p className="mt-1 text-sm text-ink-soft">{latestFallRisk.notes}</p>}
+                            {fallRiskHistory.length > 1 && (
+                              <details className="mt-3">
+                                <summary className="cursor-pointer text-xs font-medium text-teal">
+                                  View {fallRiskHistory.length - 1} earlier assessment{fallRiskHistory.length - 1 !== 1 ? "s" : ""}
+                                </summary>
+                                <div className="mt-2 flex flex-col gap-2">
+                                  {[...fallRiskHistory].reverse().slice(1).map((f) => (
+                                    <div key={f.id} className="flex items-center justify-between rounded-lg bg-secondary px-3 py-2">
+                                      <div>
+                                        <div className="text-xs text-muted-foreground">{formatDateTime(f.timestamp)} · {f.authorRole}</div>
+                                        <span className={`mt-1 inline-block rounded-full px-2 py-0.5 text-xs font-medium ${fallRiskBadgeStyle(f.level)}`}>{f.level}</span>
+                                      </div>
+                                      <button onClick={() => deleteFallRiskAssessment(f.id)} className="text-xs text-muted-foreground hover:text-destructive"><X size={12} /></button>
+                                    </div>
+                                  ))}
+                                </div>
+                              </details>
+                            )}
+                          </div>
+                        ) : (
+                          <p className="text-sm text-ink-soft">No fall risk assessment recorded yet.</p>
+                        )}
+                      </div>
+
+                      {/* Care schedule */}
+                      <div className="mt-6 rounded-xl border border-border bg-background p-4">
+                        <div className="mb-3 flex items-center justify-between">
+                          <span className="text-sm font-semibold text-ink">Care schedule</span>
+                          {!scheduleFormOpen && (
+                            <button onClick={() => setScheduleFormOpen(true)} className="text-xs font-medium text-teal hover:underline">+ Add task</button>
+                          )}
+                        </div>
+                        {scheduleFormOpen && (
+                          <div className="mb-4 flex flex-col gap-3 rounded-lg border border-border p-3">
+                            <div className="grid grid-cols-2 gap-3">
+                              <input value={scheduleTime} onChange={(e) => setScheduleTime(e.target.value)} type="time"
+                                className="rounded-lg border border-border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring" />
+                              <input value={scheduleTask} onChange={(e) => setScheduleTask(e.target.value)}
+                                onKeyDown={(e) => e.key === "Enter" && addScheduleItem()}
+                                placeholder="Task, e.g. Assist with shower"
+                                className="rounded-lg border border-border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring" />
+                            </div>
+                            <input value={scheduleNotes} onChange={(e) => setScheduleNotes(e.target.value)} placeholder="Notes (optional)"
+                              className="rounded-lg border border-border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring" />
+                            <div className="flex gap-2">
+                              <button onClick={addScheduleItem} className="rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Add to schedule</button>
+                              <button onClick={() => setScheduleFormOpen(false)} className="rounded-full px-4 py-2 text-sm text-ink-soft hover:bg-secondary">Cancel</button>
+                            </div>
+                          </div>
+                        )}
+                        {scheduleItems.length > 0 ? (
+                          <div className="flex flex-col gap-2">
+                            {scheduleItems.map((s) => (
+                              <div key={s.id} className={`flex items-center justify-between rounded-lg px-3 py-2 ${s.done ? "bg-teal-soft" : "bg-secondary"}`}>
+                                <button onClick={() => toggleScheduleDone(s.id)} className="flex flex-1 items-center gap-3 text-left">
+                                  <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${s.done ? "border-teal bg-teal text-white" : "border-border"}`}>
+                                    {s.done && <Check size={10} />}
+                                  </span>
+                                  <div className="min-w-0">
+                                    <div className={`text-sm ${s.done ? "text-ink-soft line-through" : "text-ink"}`}>
+                                      {s.time && <span className="font-medium">{s.time} · </span>}{s.task}
+                                    </div>
+                                    {s.notes && <div className="text-xs text-muted-foreground">{s.notes}</div>}
+                                  </div>
+                                </button>
+                                <button onClick={() => removeScheduleItem(s.id)} className="shrink-0 text-xs text-muted-foreground hover:text-destructive"><X size={12} /></button>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-sm text-ink-soft">No scheduled tasks yet.</p>
+                        )}
+                      </div>
+
+                      {/* Family details */}
+                      <div className="mt-6 rounded-xl border border-border bg-background p-4">
+                        <div className="mb-3 flex items-center justify-between">
+                          <span className="text-sm font-semibold text-ink">Family details</span>
+                          {!familyFormOpen && (
+                            <button onClick={() => setFamilyFormOpen(true)} className="text-xs font-medium text-teal hover:underline">+ Add family member</button>
+                          )}
+                        </div>
+                        {familyFormOpen && (
+                          <div className="mb-4 flex flex-col gap-3 rounded-lg border border-border p-3">
+                            <div className="grid grid-cols-2 gap-3">
+                              <input value={familyName} onChange={(e) => setFamilyName(e.target.value)} placeholder="Full name"
+                                className="rounded-lg border border-border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring" />
+                              <input value={familyRelationship} onChange={(e) => setFamilyRelationship(e.target.value)} placeholder="Relationship, e.g. Daughter"
+                                className="rounded-lg border border-border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring" />
+                              <input value={familyPhone} onChange={(e) => setFamilyPhone(e.target.value)} placeholder="Phone"
+                                className="rounded-lg border border-border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring" />
+                              <input value={familyEmail} onChange={(e) => setFamilyEmail(e.target.value)}
+                                onKeyDown={(e) => e.key === "Enter" && addFamilyContact()}
+                                placeholder="Email (optional)"
+                                className="rounded-lg border border-border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring" />
+                            </div>
+                            <div className="flex gap-2">
+                              <button onClick={addFamilyContact} className="rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Save contact</button>
+                              <button onClick={() => setFamilyFormOpen(false)} className="rounded-full px-4 py-2 text-sm text-ink-soft hover:bg-secondary">Cancel</button>
+                            </div>
+                          </div>
+                        )}
+                        {familyContacts.length > 0 ? (
+                          <div className="flex flex-col gap-2">
+                            {familyContacts.map((c) => (
+                              <div key={c.id} className="flex items-center justify-between rounded-lg bg-secondary px-3 py-2">
+                                <div>
+                                  <div className="text-sm font-medium text-ink">{c.name} <span className="font-normal text-ink-soft">· {c.relationship}</span></div>
+                                  <div className="text-xs text-muted-foreground">{c.phone}{c.email ? ` · ${c.email}` : ""}</div>
+                                </div>
+                                <button onClick={() => removeFamilyContact(c.id)} className="text-xs text-muted-foreground hover:text-destructive"><X size={12} /></button>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-sm text-ink-soft">No family details recorded yet.</p>
+                        )}
+                      </div>
+                    </>
+                  );
+                })()}
 
                 <div className="mt-6 rounded-xl border border-border bg-background p-4">
                   <div className="mb-3 flex items-center justify-between">
@@ -3468,6 +3862,43 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
                 <textarea value={profileDraft.communicationStyle} onChange={(e) => setProfileDraft((prev) => ({ ...prev, communicationStyle: e.target.value }))} rows={2} className="mt-1 w-full resize-none rounded-lg border border-border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring" />
               </div>
               <button onClick={saveProfile} className="rounded-full bg-primary py-2.5 text-sm font-medium text-primary-foreground">Save profile</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Carer profile modal */}
+      {carerProfileOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setCarerProfileOpen(false)}>
+          <div onClick={(e) => e.stopPropagation()} className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-lift">
+            <h2 className="text-lg text-ink">My profile</h2>
+            <div className="mt-4 flex flex-col gap-3">
+              <div>
+                <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Full name</label>
+                <input value={carerProfileDraft.name} onChange={(e) => setCarerProfileDraft((prev) => ({ ...prev, name: e.target.value }))}
+                  className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring" />
+              </div>
+              <div>
+                <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Qualifications</label>
+                <textarea value={carerProfileDraft.qualifications} onChange={(e) => setCarerProfileDraft((prev) => ({ ...prev, qualifications: e.target.value }))}
+                  rows={2} placeholder="e.g. Certificate III in Individual Support"
+                  className="mt-1 w-full resize-none rounded-lg border border-border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring" />
+              </div>
+              <div>
+                <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Phone</label>
+                <input value={carerProfileDraft.phone} onChange={(e) => setCarerProfileDraft((prev) => ({ ...prev, phone: e.target.value }))}
+                  className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring" />
+              </div>
+              <div>
+                <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Email</label>
+                <input value={carerProfileDraft.email} onChange={(e) => setCarerProfileDraft((prev) => ({ ...prev, email: e.target.value }))}
+                  onKeyDown={(e) => e.key === "Enter" && saveCarerProfile()}
+                  className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring" />
+              </div>
+              <div className="mt-1 flex gap-2">
+                <button onClick={saveCarerProfile} className="rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Save profile</button>
+                <button onClick={() => setCarerProfileOpen(false)} className="rounded-full px-4 py-2 text-sm text-ink-soft hover:bg-secondary">Cancel</button>
+              </div>
             </div>
           </div>
         </div>

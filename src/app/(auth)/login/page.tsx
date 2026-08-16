@@ -16,6 +16,7 @@ const ROLE_PATHS: Record<Role, string> = {
   FAMILY_MEMBER: "/family",
   MANAGER:       "/manager",
   ADMIN:         "/manager",
+  CARER:         "/carer",
 };
 
 export default function LoginPage() {

@@ -15,6 +15,7 @@ const ROLE_PATHS: Record<Role, string> = {
   FAMILY_MEMBER: "/family",
   MANAGER:       "/manager",
   ADMIN:         "/manager",
+  CARER:         "/carer",
 };
 
 // ── Inline SVG icon primitives ───────────────────────────────────────────────

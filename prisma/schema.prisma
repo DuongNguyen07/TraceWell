@@ -15,6 +15,7 @@ enum Role {
   FAMILY_MEMBER
   MANAGER
   ADMIN
+  CARER
 }
 
 // Matches the four input methods in the care-note form.
@@ -196,7 +197,9 @@ model ReferralNote {
   patientProfileId String
   authorId         String
   fromName         String
-  toRecipient      String    // free text — department, specialty, or named clinician
+  toRecipient      String    // legacy single recipient; new records use toRecipients
+  toRecipients     String[]  @default([])
+  referralType     String    @default("internal") // "internal" | "external"
   subject          String
   message          String
   acknowledged     Boolean   @default(false)

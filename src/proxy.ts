@@ -8,6 +8,7 @@ const ROLE_ROUTES: Record<string, Role[]> = {
   '/doctor':   ['DOCTOR'],
   '/family':   ['FAMILY_MEMBER'],
   '/manager':  ['MANAGER', 'ADMIN'],
+  '/carer':    ['CARER'],
 }
 
 export default withAuth(
@@ -34,5 +35,5 @@ export default withAuth(
 )
 
 export const config = {
-  matcher: ['/patient/:path*', '/nurse/:path*', '/doctor/:path*', '/family/:path*', '/manager/:path*'],
+  matcher: ['/patient/:path*', '/nurse/:path*', '/doctor/:path*', '/family/:path*', '/manager/:path*', '/carer/:path*'],
 }

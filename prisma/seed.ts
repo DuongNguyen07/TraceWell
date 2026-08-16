@@ -10,223 +10,231 @@ const pool = new Pool({ connectionString: process.env.DATABASE_URL!, ssl: { reje
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
-async function hash(pw: string) {
-  return bcrypt.hash(pw, 10);
-}
-
-function dob(year: number, month: number, day: number) {
-  return new Date(year, month - 1, day);
-}
-
-function daysAgo(n: number, hourOffset = 0): Date {
+async function hash(pw: string) { return bcrypt.hash(pw, 10); }
+function dob(year: number, month: number, day: number) { return new Date(year, month - 1, day); }
+function daysAgo(n: number, hourOffset = 8): Date {
   const d = new Date();
   d.setDate(d.getDate() - n);
-  d.setHours(hourOffset, Math.floor(Math.random() * 60), 0, 0);
+  d.setHours(hourOffset, Math.floor(Math.random() * 59), 0, 0);
   return d;
 }
+function rand(min: number, max: number) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+function clamp(v: number, min = 1, max = 10) { return Math.min(max, Math.max(min, Math.round(v))); }
+function vary(base: number, spread = 2) { return clamp(base + (Math.random() - 0.5) * spread * 2); }
 
-// ─── Hospital ─────────────────────────────────────────────────────────────────
+// ─── Hospital staff ────────────────────────────────────────────────────────────
 
-const HOSPITAL_STAFF: { name: string; email: string; password: string; role: Role; org: string }[] = [
-  { name: "Sarah Jones",      email: "sarah.jones@stpetershospital.com",  password: "nurse123",   role: "NURSE",   org: "hospital" },
-  { name: "James Kowalski",   email: "j.kowalski@stpetershospital.com",   password: "nurse123",   role: "NURSE",   org: "hospital" },
-  { name: "Dr. Michael Chen", email: "dr.chen@stpetershospital.com",      password: "doctor123",  role: "DOCTOR",  org: "hospital" },
-  { name: "Patricia Walsh",   email: "p.walsh@stpetershospital.com",      password: "manager123", role: "MANAGER", org: "hospital" },
+const HOSPITAL_STAFF = [
+  { name: "Sarah Jones",      email: "sarah.jones@stpetershospital.com",   password: "nurse123",   role: "NURSE"   as Role, org: "hospital" },
+  { name: "James Kowalski",   email: "j.kowalski@stpetershospital.com",    password: "nurse123",   role: "NURSE"   as Role, org: "hospital" },
+  { name: "Aisha Okonkwo",    email: "a.okonkwo@stpetershospital.com",     password: "nurse123",   role: "NURSE"   as Role, org: "hospital" },
+  { name: "Dr. Michael Chen", email: "dr.chen@stpetershospital.com",       password: "doctor123",  role: "DOCTOR"  as Role, org: "hospital" },
+  { name: "Dr. Fatima Malik", email: "dr.malik@stpetershospital.com",      password: "doctor123",  role: "DOCTOR"  as Role, org: "hospital" },
+  { name: "Patricia Walsh",   email: "p.walsh@stpetershospital.com",       password: "manager123", role: "MANAGER" as Role, org: "hospital" },
 ];
 
 const HOSPITAL_PATIENTS = [
   {
-    user: { name: "Amara Chen",  email: "amara.chen@stpetershospital.com",  password: "patient123", role: "PATIENT" as Role, org: "hospital" },
+    user: { name: "Amara Chen",    email: "amara.chen@stpetershospital.com",    password: "patient123", role: "PATIENT" as Role, org: "hospital" },
     profile: {
-      dateOfBirth: dob(1957, 3, 12),
-      ward: "Ward 3B",
+      dateOfBirth: dob(1957, 3, 12), ward: "Ward 3B",
       allergies: ["Penicillin", "Shellfish"],
-      baseline:   { mood: 6, appetite: 6, mobility: 5, sleep: 6 },
-      profileData: {
-        preferences: "Prefers tea over coffee; likes the curtain open during the day.",
-        routine: "Usually naps 2-3pm; anxious before scans.",
-        communicationStyle: "Mandarin is first language; prefers written instructions repeated verbally.",
-      },
-      medications: [
-        { name: "Metformin",  dose: "500mg", frequency: "Twice daily" },
-        { name: "Lisinopril", dose: "10mg",  frequency: "Once daily"  },
-      ],
-      diagnoses: [
-        { condition: "Type 2 diabetes", status: "CHRONIC" as DiagnosisStatus },
-        { condition: "Hypertension",    status: "ACTIVE"  as DiagnosisStatus },
-      ],
-      dietaryNotes: "Low-sodium, diabetic diet.",
+      baseline: { mood: 6, appetite: 6, mobility: 5, sleep: 6 },
+      profileData: { preferences: "Prefers tea over coffee; likes the curtain open during the day.", routine: "Usually naps 2–3 pm; anxious before scans.", communicationStyle: "Mandarin is first language; prefers written instructions repeated verbally." },
+      medications: [{ name: "Metformin", dose: "500 mg", frequency: "Twice daily" }, { name: "Lisinopril", dose: "10 mg", frequency: "Once daily" }],
+      diagnoses: [{ condition: "Type 2 diabetes", status: "CHRONIC" as DiagnosisStatus }, { condition: "Hypertension", status: "ACTIVE" as DiagnosisStatus }],
     },
   },
   {
-    user: { name: "David Osei", email: "david.osei@stpetershospital.com", password: "patient123", role: "PATIENT" as Role, org: "hospital" },
+    user: { name: "David Osei",    email: "david.osei@stpetershospital.com",    password: "patient123", role: "PATIENT" as Role, org: "hospital" },
     profile: {
-      dateOfBirth: dob(1970, 8, 25),
-      ward: "Ward 2A",
+      dateOfBirth: dob(1970, 8, 25), ward: "Ward 2A",
       allergies: ["Latex"],
-      baseline:   { mood: 7, appetite: 7, mobility: 7, sleep: 5 },
-      profileData: {
-        preferences: "Prefers to be called Dave; likes the radio on low.",
-        routine: "Early riser, walks the ward corridor most mornings.",
-        communicationStyle: "Direct communicator, appreciates being told things plainly.",
-      },
-      medications: [
-        { name: "Paracetamol", dose: "1g",   frequency: "Four times daily" },
-        { name: "Enoxaparin",  dose: "40mg", frequency: "Once daily"       },
-      ],
-      diagnoses: [
-        { condition: "Post-op recovery (hip replacement)", status: "ACTIVE" as DiagnosisStatus },
-      ],
-      dietaryNotes: "No restrictions.",
+      baseline: { mood: 7, appetite: 7, mobility: 7, sleep: 5 },
+      profileData: { preferences: "Prefers to be called Dave; likes the radio on low.", routine: "Early riser, walks the corridor most mornings.", communicationStyle: "Direct communicator, appreciates plain talk." },
+      medications: [{ name: "Paracetamol", dose: "1 g", frequency: "Four times daily" }, { name: "Enoxaparin", dose: "40 mg", frequency: "Once daily" }],
+      diagnoses: [{ condition: "Post-op recovery (hip replacement)", status: "ACTIVE" as DiagnosisStatus }],
     },
   },
   {
-    user: { name: "Priya Singh", email: "priya.singh@stpetershospital.com", password: "patient123", role: "PATIENT" as Role, org: "hospital" },
+    user: { name: "Priya Singh",   email: "priya.singh@stpetershospital.com",   password: "patient123", role: "PATIENT" as Role, org: "hospital" },
     profile: {
-      dateOfBirth: dob(1953, 11, 7),
-      ward: "ICU-4",
-      allergies: [] as string[],
-      baseline:   { mood: 5, appetite: 5, mobility: 3, sleep: 6 },
-      profileData: {
-        preferences: "Vegetarian; family visits are important, prefers evenings.",
-        routine: "Sleeps lightly, wakes easily to noise.",
-        communicationStyle: "Prefers Hindi for complex explanations; daughter often translates.",
-      },
-      medications: [
-        { name: "Warfarin",         dose: "3mg",      frequency: "Once daily, evening" },
-        { name: "Metoprolol",       dose: "25mg",     frequency: "Twice daily"         },
-        { name: "Insulin (Lantus)", dose: "10 units", frequency: "Nightly"             },
-      ],
-      diagnoses: [
-        { condition: "Post-cardiac surgery", status: "ACTIVE"  as DiagnosisStatus },
-        { condition: "Atrial fibrillation",  status: "CHRONIC" as DiagnosisStatus },
-      ],
-      dietaryNotes: "Fluid-restricted, vegetarian.",
+      dateOfBirth: dob(1953, 11, 7), ward: "ICU-4",
+      allergies: [],
+      baseline: { mood: 5, appetite: 5, mobility: 3, sleep: 6 },
+      profileData: { preferences: "Vegetarian; family visits important, prefers evenings.", routine: "Sleeps lightly, wakes easily to noise.", communicationStyle: "Prefers Hindi for complex explanations; daughter often translates." },
+      medications: [{ name: "Warfarin", dose: "3 mg", frequency: "Once daily, evening" }, { name: "Metoprolol", dose: "25 mg", frequency: "Twice daily" }, { name: "Insulin (Lantus)", dose: "10 units", frequency: "Nightly" }],
+      diagnoses: [{ condition: "Post-cardiac surgery", status: "ACTIVE" as DiagnosisStatus }, { condition: "Atrial fibrillation", status: "CHRONIC" as DiagnosisStatus }],
+    },
+  },
+  {
+    user: { name: "Thomas Burke",  email: "t.burke@stpetershospital.com",       password: "patient123", role: "PATIENT" as Role, org: "hospital" },
+    profile: {
+      dateOfBirth: dob(1965, 6, 19), ward: "Ward 5C",
+      allergies: ["Codeine"],
+      baseline: { mood: 7, appetite: 8, mobility: 6, sleep: 7 },
+      profileData: { preferences: "Keen AFL fan; keep him updated on scores.", routine: "Showers independently in the morning.", communicationStyle: "Very talkative; brief summaries work better than long explanations." },
+      medications: [{ name: "Omeprazole", dose: "20 mg", frequency: "Once daily" }, { name: "Atorvastatin", dose: "40 mg", frequency: "Once daily, night" }],
+      diagnoses: [{ condition: "Peptic ulcer disease", status: "ACTIVE" as DiagnosisStatus }, { condition: "Hyperlipidaemia", status: "CHRONIC" as DiagnosisStatus }],
+    },
+  },
+  {
+    user: { name: "Helen Park",    email: "h.park@stpetershospital.com",        password: "patient123", role: "PATIENT" as Role, org: "hospital" },
+    profile: {
+      dateOfBirth: dob(1948, 2, 3), ward: "Ward 3B",
+      allergies: ["Aspirin", "NSAIDs"],
+      baseline: { mood: 6, appetite: 5, mobility: 4, sleep: 5 },
+      profileData: { preferences: "Prefers female nurses for personal care; enjoys crossword puzzles.", routine: "Takes morning medications before breakfast.", communicationStyle: "Slight hearing impairment; speak clearly and face her directly." },
+      medications: [{ name: "Furosemide", dose: "40 mg", frequency: "Once daily, morning" }, { name: "Spironolactone", dose: "25 mg", frequency: "Once daily" }, { name: "Digoxin", dose: "0.125 mg", frequency: "Once daily" }],
+      diagnoses: [{ condition: "Heart failure (HFrEF)", status: "CHRONIC" as DiagnosisStatus }, { condition: "Chronic kidney disease stage 3", status: "CHRONIC" as DiagnosisStatus }],
     },
   },
 ];
 
 const HOSPITAL_FAMILY = [
-  {
-    user: { name: "Lena Chen", email: "lena.chen@gmail.com", password: "family123", role: "FAMILY_MEMBER" as Role, org: "hospital" },
-    linkedPatientEmail: "amara.chen@stpetershospital.com",
-    relationship: "daughter",
-  },
+  { user: { name: "Lena Chen",    email: "lena.chen@gmail.com",       password: "family123", role: "FAMILY_MEMBER" as Role, org: "hospital" }, linkedPatientEmail: "amara.chen@stpetershospital.com",  relationship: "daughter" },
+  { user: { name: "Kofi Osei",    email: "kofi.osei@gmail.com",       password: "family123", role: "FAMILY_MEMBER" as Role, org: "hospital" }, linkedPatientEmail: "david.osei@stpetershospital.com",  relationship: "brother"  },
+  { user: { name: "Ananya Singh", email: "ananya.singh@gmail.com",    password: "family123", role: "FAMILY_MEMBER" as Role, org: "hospital" }, linkedPatientEmail: "priya.singh@stpetershospital.com", relationship: "daughter" },
+  { user: { name: "Claire Burke", email: "claire.burke@gmail.com",    password: "family123", role: "FAMILY_MEMBER" as Role, org: "hospital" }, linkedPatientEmail: "t.burke@stpetershospital.com",     relationship: "spouse"   },
 ];
 
-// ─── Aged Care ────────────────────────────────────────────────────────────────
+// ─── Aged Care staff ───────────────────────────────────────────────────────────
 
-const AGED_CARE_STAFF: { name: string; email: string; password: string; role: Role; org: string }[] = [
-  { name: "Mary Nguyen",     email: "mary.nguyen@sunriseagedcare.com.au",  password: "nurse123",   role: "NURSE",   org: "agedcare" },
-  { name: "Tom Bradley",     email: "t.bradley@sunriseagedcare.com.au",    password: "nurse123",   role: "NURSE",   org: "agedcare" },
-  { name: "Dr. Anita Patel", email: "dr.patel@sunriseagedcare.com.au",     password: "doctor123",  role: "DOCTOR",  org: "agedcare" },
-  { name: "James Wilson",    email: "j.wilson@sunriseagedcare.com.au",     password: "manager123", role: "MANAGER", org: "agedcare" },
+const AGED_CARE_STAFF = [
+  { name: "Mary Nguyen",      email: "mary.nguyen@sunriseagedcare.com.au",   password: "nurse123",   role: "NURSE"   as Role, org: "agedcare" },
+  { name: "Tom Bradley",      email: "t.bradley@sunriseagedcare.com.au",     password: "nurse123",   role: "NURSE"   as Role, org: "agedcare" },
+  { name: "Linda Santos",     email: "l.santos@sunriseagedcare.com.au",      password: "carer123",   role: "CARER"   as Role, org: "agedcare" },
+  { name: "Marcus Webb",      email: "m.webb@sunriseagedcare.com.au",        password: "carer123",   role: "CARER"   as Role, org: "agedcare" },
+  { name: "Judy Kim",         email: "j.kim@sunriseagedcare.com.au",         password: "carer123",   role: "CARER"   as Role, org: "agedcare" },
+  { name: "Dr. Anita Patel",  email: "dr.patel@sunriseagedcare.com.au",      password: "doctor123",  role: "DOCTOR"  as Role, org: "agedcare" },
+  { name: "James Wilson",     email: "j.wilson@sunriseagedcare.com.au",      password: "manager123", role: "MANAGER" as Role, org: "agedcare" },
 ];
 
 const AGED_CARE_PATIENTS = [
   {
-    user: { name: "Margaret Wu", email: "margaret.wu@sunriseagedcare.com.au", password: "patient123", role: "PATIENT" as Role, org: "agedcare" },
+    user: { name: "Margaret Wu",    email: "margaret.wu@sunriseagedcare.com.au",    password: "patient123", role: "PATIENT" as Role, org: "agedcare" },
     profile: {
-      dateOfBirth: dob(1942, 5, 20),
-      ward: "Room 12B",
+      dateOfBirth: dob(1942, 5, 20), ward: "Room 12B",
       allergies: ["Sulfa drugs"],
-      baseline:   { mood: 7, appetite: 7, mobility: 6, sleep: 7 },
-      profileData: {
-        preferences: "Enjoys gardening chat and classical music; dislikes rushed showers.",
-        routine: "Church call every Sunday morning; tea at 3pm sharp.",
-        communicationStyle: "Mild hearing loss in left ear - approach from the right.",
-      },
-      medications: [
-        { name: "Donepezil",   dose: "5mg",   frequency: "Once daily, evening" },
-        { name: "Paracetamol", dose: "500mg", frequency: "As required"         },
-      ],
-      diagnoses: [
-        { condition: "Osteoarthritis",         status: "CHRONIC" as DiagnosisStatus },
-        { condition: "Mild cognitive impairment", status: "CHRONIC" as DiagnosisStatus },
-      ],
-      dietaryNotes: "Soft-food diet, thickened fluids.",
+      baseline: { mood: 7, appetite: 7, mobility: 6, sleep: 7 },
+      profileData: { preferences: "Enjoys gardening chat and classical music; dislikes rushed showers.", routine: "Church call Sunday morning; tea at 3 pm sharp.", communicationStyle: "Mild hearing loss in left ear — approach from the right." },
+      medications: [{ name: "Donepezil", dose: "5 mg", frequency: "Once daily, evening" }, { name: "Paracetamol", dose: "500 mg", frequency: "As required" }],
+      diagnoses: [{ condition: "Osteoarthritis", status: "CHRONIC" as DiagnosisStatus }, { condition: "Mild cognitive impairment", status: "CHRONIC" as DiagnosisStatus }],
     },
   },
   {
-    user: { name: "Robert Nguyen", email: "robert.nguyen@sunriseagedcare.com.au", password: "patient123", role: "PATIENT" as Role, org: "agedcare" },
+    user: { name: "Robert Nguyen",  email: "robert.nguyen@sunriseagedcare.com.au",  password: "patient123", role: "PATIENT" as Role, org: "agedcare" },
     profile: {
-      dateOfBirth: dob(1948, 9, 14),
-      ward: "Room 08A",
-      allergies: [] as string[],
-      baseline:   { mood: 6, appetite: 8, mobility: 7, sleep: 6 },
-      profileData: {
-        preferences: "Enjoys card games with other residents; strong coffee only.",
-        routine: "Physio every Tuesday and Thursday at 10am.",
-        communicationStyle: "Vietnamese first language; son Minh usually assists with complex topics.",
-      },
-      medications: [
-        { name: "Metformin",  dose: "500mg", frequency: "Twice daily with meals" },
-        { name: "Metoprolol", dose: "25mg",  frequency: "Twice daily"            },
-      ],
-      diagnoses: [
-        { condition: "Type 2 diabetes", status: "CHRONIC" as DiagnosisStatus },
-      ],
-      dietaryNotes: "Diabetic diet, no added sugar.",
+      dateOfBirth: dob(1948, 9, 14), ward: "Room 08A",
+      allergies: [],
+      baseline: { mood: 6, appetite: 8, mobility: 7, sleep: 6 },
+      profileData: { preferences: "Enjoys card games with other residents; strong coffee only.", routine: "Physio every Tuesday and Thursday at 10 am.", communicationStyle: "Vietnamese first language; son Minh assists with complex topics." },
+      medications: [{ name: "Metformin", dose: "500 mg", frequency: "Twice daily with meals" }, { name: "Metoprolol", dose: "25 mg", frequency: "Twice daily" }],
+      diagnoses: [{ condition: "Type 2 diabetes", status: "CHRONIC" as DiagnosisStatus }, { condition: "Hypertension", status: "ACTIVE" as DiagnosisStatus }],
     },
   },
   {
     user: { name: "Elsie Campbell", email: "elsie.campbell@sunriseagedcare.com.au", password: "patient123", role: "PATIENT" as Role, org: "agedcare" },
     profile: {
-      dateOfBirth: dob(1935, 2, 28),
-      ward: "Room 14C",
+      dateOfBirth: dob(1935, 2, 28), ward: "Room 14C",
       allergies: ["Penicillin"],
-      baseline:   { mood: 8, appetite: 6, mobility: 4, sleep: 8 },
-      profileData: {
-        preferences: "Loves her dog's photo on the nightstand; prefers female carers for personal care.",
-        routine: "Settles best with the hallway light left on overnight.",
-        communicationStyle: "Mild dementia - short, simple sentences work best; avoid open-ended questions.",
-      },
-      medications: [
-        { name: "Furosemide", dose: "40mg",  frequency: "Once daily, morning" },
-        { name: "Aspirin",    dose: "100mg", frequency: "Once daily"          },
-      ],
-      diagnoses: [
-        { condition: "Congestive heart failure", status: "CHRONIC" as DiagnosisStatus },
-        { condition: "Reduced mobility",         status: "ACTIVE"  as DiagnosisStatus },
-      ],
-      dietaryNotes: "Low-salt diet, fluid intake monitored.",
+      baseline: { mood: 8, appetite: 6, mobility: 4, sleep: 8 },
+      profileData: { preferences: "Loves her dog's photo on the nightstand; prefers female carers for personal care.", routine: "Settles best with the hallway light left on overnight.", communicationStyle: "Mild dementia — short simple sentences; avoid open-ended questions." },
+      medications: [{ name: "Furosemide", dose: "40 mg", frequency: "Once daily, morning" }, { name: "Aspirin", dose: "100 mg", frequency: "Once daily" }],
+      diagnoses: [{ condition: "Congestive heart failure", status: "CHRONIC" as DiagnosisStatus }, { condition: "Reduced mobility", status: "ACTIVE" as DiagnosisStatus }],
+    },
+  },
+  {
+    user: { name: "Arthur Reid",    email: "arthur.reid@sunriseagedcare.com.au",    password: "patient123", role: "PATIENT" as Role, org: "agedcare" },
+    profile: {
+      dateOfBirth: dob(1939, 11, 5), ward: "Room 07B",
+      allergies: ["Ibuprofen"],
+      baseline: { mood: 7, appetite: 7, mobility: 5, sleep: 7 },
+      profileData: { preferences: "Retired schoolteacher; loves chess and the morning newspaper.", routine: "Walks to the garden daily at 9 am when weather permits.", communicationStyle: "Sharp and articulate; prefers full explanations of his care plan." },
+      medications: [{ name: "Warfarin", dose: "2 mg", frequency: "Once daily" }, { name: "Amlodipine", dose: "5 mg", frequency: "Once daily" }, { name: "Atorvastatin", dose: "20 mg", frequency: "Once nightly" }],
+      diagnoses: [{ condition: "Atrial fibrillation", status: "CHRONIC" as DiagnosisStatus }, { condition: "Peripheral vascular disease", status: "CHRONIC" as DiagnosisStatus }],
+    },
+  },
+  {
+    user: { name: "Dorothy Mason",  email: "dorothy.mason@sunriseagedcare.com.au",  password: "patient123", role: "PATIENT" as Role, org: "agedcare" },
+    profile: {
+      dateOfBirth: dob(1944, 7, 22), ward: "Room 11A",
+      allergies: [],
+      baseline: { mood: 6, appetite: 6, mobility: 6, sleep: 5 },
+      profileData: { preferences: "Enjoys knitting and afternoon TV; dislikes fluorescent lighting.", routine: "Takes a short walk after lunch each day.", communicationStyle: "Responds well to humour; becomes withdrawn when in pain." },
+      medications: [{ name: "Prednisolone", dose: "5 mg", frequency: "Once daily, morning" }, { name: "Calcium + Vit D", dose: "600 mg / 400 IU", frequency: "Once daily" }, { name: "Omeprazole", dose: "20 mg", frequency: "Once daily" }],
+      diagnoses: [{ condition: "Rheumatoid arthritis", status: "CHRONIC" as DiagnosisStatus }, { condition: "Osteoporosis", status: "CHRONIC" as DiagnosisStatus }, { condition: "Insomnia", status: "ACTIVE" as DiagnosisStatus }],
     },
   },
 ];
 
 const AGED_CARE_FAMILY = [
-  {
-    user: { name: "Tom Wu", email: "tom.wu@gmail.com", password: "family123", role: "FAMILY_MEMBER" as Role, org: "agedcare" },
-    linkedPatientEmail: "margaret.wu@sunriseagedcare.com.au",
-    relationship: "son",
-  },
+  { user: { name: "Tom Wu",       email: "tom.wu@gmail.com",          password: "family123", role: "FAMILY_MEMBER" as Role, org: "agedcare" }, linkedPatientEmail: "margaret.wu@sunriseagedcare.com.au",    relationship: "son"      },
+  { user: { name: "Minh Nguyen",  email: "minh.nguyen@gmail.com",     password: "family123", role: "FAMILY_MEMBER" as Role, org: "agedcare" }, linkedPatientEmail: "robert.nguyen@sunriseagedcare.com.au",  relationship: "son"      },
+  { user: { name: "Grace Reid",   email: "grace.reid@gmail.com",      password: "family123", role: "FAMILY_MEMBER" as Role, org: "agedcare" }, linkedPatientEmail: "arthur.reid@sunriseagedcare.com.au",    relationship: "daughter" },
+  { user: { name: "Paul Mason",   email: "paul.mason@gmail.com",      password: "family123", role: "FAMILY_MEMBER" as Role, org: "agedcare" }, linkedPatientEmail: "dorothy.mason@sunriseagedcare.com.au",  relationship: "spouse"   },
 ];
 
-// ─── Sample clinical data ──────────────────────────────────────────────────────
+// ─── Clinical data generators ──────────────────────────────────────────────────
 
-function sampleNotes(patientName: string): { content: string; daysBack: number; hour: number }[] {
+function careNotes(patientName: string, authorName: string, authorLabel: string): { content: string; daysBack: number; hour: number; type?: CareNoteType }[] {
   const n = patientName.split(" ")[0];
   return [
-    { content: `${n} settled overnight. No complaints of pain. Encouraged oral fluids. Obs stable.`,                                                daysBack: 0, hour: 7  },
-    { content: `Assisted ${n} with morning care. Mood appears brighter today — engaged in conversation. Appetite improving.`,                        daysBack: 1, hour: 9  },
-    { content: `${n} reported some discomfort this afternoon. Administered analgesia as charted. Will monitor. Family visited.`,                     daysBack: 2, hour: 14 },
-    { content: `Night round — ${n} sleeping comfortably. No incidents to report. Fluid balance within expected range.`,                              daysBack: 3, hour: 22 },
-    { content: `${n} participated in morning exercises with physio. Good engagement, tolerated well.`,                                               daysBack: 5, hour: 10 },
+    { content: `${n} settled overnight. No complaints of pain. Encouraged oral fluids. Obs stable.`,                             daysBack: 0,  hour: 7  },
+    { content: `Assisted ${n} with morning care. Mood appears brighter — engaged in conversation. Appetite improving.`,           daysBack: 1,  hour: 9  },
+    { content: `${n} reported some discomfort this afternoon. Administered analgesia as charted. Will monitor. Family visited.`,  daysBack: 2,  hour: 14 },
+    { content: `Night round — ${n} sleeping comfortably. No incidents to report. Fluid balance within expected range.`,           daysBack: 3,  hour: 22 },
+    { content: `${n} participated in morning exercises. Good engagement, tolerated well.`,                                        daysBack: 5,  hour: 10 },
+    { content: `Handover note: ${n} has been more withdrawn today. Consider checking in with family.`,                            daysBack: 7,  hour: 15 },
+    { content: `${n} ate well at lunch. Walked to the window with minimal assistance. Good progress.`,                            daysBack: 9,  hour: 12 },
+    { content: `Medications administered on time. ${n} asked about discharge timeline — relayed to medical team.`,                daysBack: 11, hour: 8  },
+    { content: `${n} had a disrupted night, needed repositioning twice. No skin breakdown noted.`,                                daysBack: 14, hour: 23 },
+    { content: `Routine check — vitals stable, no acute concerns. ${n} in good spirits.`,                                        daysBack: 17, hour: 10 },
   ];
 }
 
-function sampleWellbeing(baseline: { mood: number; appetite: number; mobility: number; sleep: number }) {
-  const vary = (base: number) => Math.min(10, Math.max(1, Math.round(base + (Math.random() - 0.5) * 2)));
-  return [5, 4, 2, 0].map((daysBack) => ({
-    mood:      vary(baseline.mood),
-    appetite:  vary(baseline.appetite),
-    mobility:  vary(baseline.mobility),
-    sleep:     vary(baseline.sleep),
-    daysBack,
-  }));
+function familyUpdateNotes(patientName: string, authorName: string): { content: string; daysBack: number }[] {
+  const n = patientName.split(" ")[0];
+  return [
+    { content: `Hi family — just a quick update. ${n} has been in good spirits today and enjoyed lunch. No concerns from the nursing team.`, daysBack: 1  },
+    { content: `${n} had a restful night and walked to the common area this morning. The care team is pleased with progress.`,               daysBack: 4  },
+    { content: `A reminder that visiting hours are 10 am–7 pm. ${n} mentioned they'd love some familiar photos from home.`,                  daysBack: 8  },
+  ];
 }
 
-// ─── Upsert helpers ───────────────────────────────────────────────────────────
+function wellbeingHistory(baseline: { mood: number; appetite: number; mobility: number; sleep: number }) {
+  // Spread over 6 weeks so weekly/monthly chart views have enough data
+  const entries = [];
+  for (let daysBack = 42; daysBack >= 0; daysBack -= rand(2, 4)) {
+    entries.push({
+      mood:      vary(baseline.mood),
+      appetite:  vary(baseline.appetite),
+      mobility:  vary(baseline.mobility),
+      sleep:     vary(baseline.sleep),
+      daysBack,
+    });
+  }
+  return entries;
+}
+
+function vitalsHistory(daysSpan: number): { systolic: number; diastolic: number; heartRate: number; temperature: number; oxygenSaturation: number; respiratoryRate: number; daysBack: number; hour: number }[] {
+  const entries = [];
+  for (let daysBack = daysSpan; daysBack >= 0; daysBack -= rand(2, 3)) {
+    entries.push({
+      systolic:         rand(110, 145),
+      diastolic:        rand(65, 95),
+      heartRate:        rand(58, 95),
+      temperature:      parseFloat((36.2 + Math.random() * 1.2).toFixed(1)),
+      oxygenSaturation: parseFloat((95 + Math.random() * 4).toFixed(1)),
+      respiratoryRate:  rand(14, 20),
+      daysBack,
+      hour: rand(6, 22),
+    });
+  }
+  return entries;
+}
+
+// ─── Upsert helper ────────────────────────────────────────────────────────────
 
 async function upsertUser(u: { name: string; email: string; password: string; role: Role; org: string }) {
   const hashed = await hash(u.password);
@@ -237,106 +245,154 @@ async function upsertUser(u: { name: string; email: string; password: string; ro
   });
 }
 
+// ─── Facility seeder ──────────────────────────────────────────────────────────
+
 async function seedFacility(
   label: string,
   staff: typeof HOSPITAL_STAFF,
   patients: typeof HOSPITAL_PATIENTS,
   family: typeof HOSPITAL_FAMILY,
-  nurseEmail: string,
+  primaryNurseEmail: string,
+  primaryDoctorEmail: string,
   authorRoleLabel: string,
 ) {
   console.log(`\n${label}`);
 
   for (const s of staff) {
     await upsertUser(s);
-    console.log(`  ✓ ${s.role.padEnd(12)} ${s.email}`);
+    console.log(`  ✓ ${s.role.padEnd(13)} ${s.email}`);
   }
 
-  const nurseUser = await prisma.user.findUnique({ where: { email: nurseEmail } });
+  const nurseUser  = await prisma.user.findUnique({ where: { email: primaryNurseEmail  } });
+  const doctorUser = await prisma.user.findUnique({ where: { email: primaryDoctorEmail } });
+
+  const patientProfiles: { id: string; patientName: string }[] = [];
 
   for (const p of patients) {
     const patientUser = await upsertUser(p.user);
-    console.log(`  ✓ PATIENT       ${p.user.email}`);
+    console.log(`  ✓ PATIENT        ${p.user.email}`);
 
     const pp = await prisma.patientProfile.upsert({
       where:  { userId: patientUser.id },
-      update: {
-        org:         p.user.org,
-        dateOfBirth: p.profile.dateOfBirth,
-        ward:        p.profile.ward,
-        allergies:   p.profile.allergies,
-        baseline:    p.profile.baseline,
-        profile:     p.profile.profileData,
-      },
-      create: {
-        userId:      patientUser.id,
-        org:         p.user.org,
-        dateOfBirth: p.profile.dateOfBirth,
-        ward:        p.profile.ward,
-        allergies:   p.profile.allergies,
-        baseline:    p.profile.baseline,
-        profile:     p.profile.profileData,
-      },
+      update: { org: p.user.org, dateOfBirth: p.profile.dateOfBirth, ward: p.profile.ward, allergies: p.profile.allergies, baseline: p.profile.baseline, profile: p.profile.profileData },
+      create: { userId: patientUser.id, org: p.user.org, dateOfBirth: p.profile.dateOfBirth, ward: p.profile.ward, allergies: p.profile.allergies, baseline: p.profile.baseline, profile: p.profile.profileData },
     });
+
+    patientProfiles.push({ id: pp.id, patientName: p.user.name });
 
     // Medications
     await prisma.medication.deleteMany({ where: { patientProfileId: pp.id } });
-    for (const m of p.profile.medications) {
-      await prisma.medication.create({
-        data: { patientProfileId: pp.id, name: m.name, dose: m.dose, frequency: m.frequency },
-      });
-    }
+    for (const m of p.profile.medications)
+      await prisma.medication.create({ data: { patientProfileId: pp.id, name: m.name, dose: m.dose, frequency: m.frequency } });
 
     // Diagnoses
     await prisma.diagnosis.deleteMany({ where: { patientProfileId: pp.id } });
-    for (const d of p.profile.diagnoses) {
-      await prisma.diagnosis.create({
-        data: {
-          patientProfileId: pp.id,
-          condition:        d.condition,
-          status:           d.status,
-          authorRole:       authorRoleLabel,
-        },
-      });
-    }
+    for (const d of p.profile.diagnoses)
+      await prisma.diagnosis.create({ data: { patientProfileId: pp.id, condition: d.condition, status: d.status, authorRole: doctorUser ? `${doctorUser.name} (Doctor)` : "Doctor" } });
 
-    // Care notes
+    // Care notes (clinical)
     if (nurseUser) {
-      await prisma.careNote.deleteMany({ where: { patientProfileId: pp.id } });
-      for (const note of sampleNotes(p.user.name)) {
+      await prisma.careNote.deleteMany({ where: { patientProfileId: pp.id, type: { in: ["TEXT", "IMAGE", "VOICE"] } } });
+      for (const note of careNotes(p.user.name, nurseUser.name, authorRoleLabel))
         await prisma.careNote.create({
-          data: {
-            patientProfileId: pp.id,
-            authorId:         nurseUser.id,
-            authorRole:       `${nurseUser.name} (${authorRoleLabel})`,
-            type:             CareNoteType.TEXT,
-            content:          note.content,
-            createdAt:        daysAgo(note.daysBack, note.hour),
-          },
+          data: { patientProfileId: pp.id, authorId: nurseUser.id, authorRole: `${nurseUser.name} (${authorRoleLabel})`, type: CareNoteType.TEXT, content: note.content, createdAt: daysAgo(note.daysBack, note.hour) },
         });
-      }
     }
 
-    // Wellbeing checks
+    // Family update notes
+    if (nurseUser) {
+      await prisma.careNote.deleteMany({ where: { patientProfileId: pp.id, type: "FAMILY_UPDATE" } });
+      for (const note of familyUpdateNotes(p.user.name, nurseUser.name))
+        await prisma.careNote.create({
+          data: { patientProfileId: pp.id, authorId: nurseUser.id, authorRole: `${nurseUser.name} (${authorRoleLabel})`, type: CareNoteType.FAMILY_UPDATE, content: note.content, createdAt: daysAgo(note.daysBack, 10) },
+        });
+    }
+
+    // Wellbeing checks (6 weeks of history)
     await prisma.wellbeingCheck.deleteMany({ where: { patientProfileId: pp.id } });
-    for (const w of sampleWellbeing(p.profile.baseline)) {
-      await prisma.wellbeingCheck.create({
+    for (const w of wellbeingHistory(p.profile.baseline))
+      await prisma.wellbeingCheck.create({ data: { patientProfileId: pp.id, mood: w.mood, appetite: w.appetite, mobility: w.mobility, sleep: w.sleep, recordedAt: daysAgo(w.daysBack, 9) } });
+
+    // Vitals (3 weeks)
+    await prisma.vitalSigns.deleteMany({ where: { patientProfileId: pp.id } });
+    for (const v of vitalsHistory(21))
+      await prisma.vitalSigns.create({
+        data: { patientProfileId: pp.id, authorRole: nurseUser ? `${nurseUser.name} (${authorRoleLabel})` : authorRoleLabel, systolic: v.systolic, diastolic: v.diastolic, heartRate: v.heartRate, temperature: v.temperature, oxygenSaturation: v.oxygenSaturation, respiratoryRate: v.respiratoryRate, recordedAt: daysAgo(v.daysBack, v.hour) },
+      });
+
+    // Medical reports (2 per patient)
+    await prisma.medicalReport.deleteMany({ where: { patientProfileId: pp.id } });
+    const firstName = p.user.name.split(" ")[0];
+    await prisma.medicalReport.create({ data: { patientProfileId: pp.id, title: `${firstName} — Admission blood panel`, type: "Blood Test", content: "FBC: Hb 118 g/L, WBC 7.2×10⁹/L, Plt 224×10⁹/L. HbA1c 7.4%. CRP 12 mg/L. Renal function within normal limits.", authorRole: doctorUser ? `${doctorUser.name} (Doctor)` : "Doctor", createdAt: daysAgo(14, 11) } });
+    await prisma.medicalReport.create({ data: { patientProfileId: pp.id, title: `${firstName} — Chest X-ray review`, type: "X-Ray", content: "Mild cardiomegaly noted. No acute consolidation or pleural effusion. Lung fields clear peripherally. Review in 6 weeks recommended.", authorRole: doctorUser ? `${doctorUser.name} (Doctor)` : "Doctor", createdAt: daysAgo(7, 14) } });
+  }
+
+  // Referrals (between first two patients)
+  if (doctorUser && patientProfiles.length >= 2) {
+    await prisma.referralNote.deleteMany({ where: { patientProfileId: patientProfiles[0].id } });
+    await prisma.referralNote.create({
+      data: {
+        patientProfileId: patientProfiles[0].id,
+        authorId:  doctorUser.id,
+        fromName:  `${doctorUser.name} (Doctor)`,
+        toRecipient:  "Endocrinology",
+        toRecipients: ["Endocrinology"],
+        referralType: "internal",
+        subject:   "Glycaemic review — HbA1c above target",
+        message:   `${patientProfiles[0].patientName.split(" ")[0]}'s HbA1c remains at 7.4% despite dose adjustment. Requesting specialist review of current regimen and consideration of GLP-1 agonist.`,
+        shareCode: "REF-" + Math.random().toString(36).slice(2, 8).toUpperCase(),
+        createdAt: daysAgo(5, 11),
+      },
+    });
+    await prisma.referralNote.create({
+      data: {
+        patientProfileId: patientProfiles[1].id,
+        authorId:  doctorUser.id,
+        fromName:  `${doctorUser.name} (Doctor)`,
+        toRecipient:  "Physiotherapy",
+        toRecipients: ["Physiotherapy", "Occupational Therapy"],
+        referralType: "internal",
+        subject:   "Post-op mobility assessment",
+        message:   "Requesting joint physio and OT review for mobility aids and home environment assessment prior to discharge.",
+        shareCode: "REF-" + Math.random().toString(36).slice(2, 8).toUpperCase(),
+        acknowledged: true,
+        acknowledgedBy: nurseUser ? `${nurseUser.name} (${authorRoleLabel})` : authorRoleLabel,
+        acknowledgedAt: daysAgo(2, 9),
+        createdAt: daysAgo(6, 14),
+      },
+    });
+    if (patientProfiles.length >= 3) {
+      await prisma.referralNote.deleteMany({ where: { patientProfileId: patientProfiles[2].id } });
+      await prisma.referralNote.create({
         data: {
-          patientProfileId: pp.id,
-          mood:      w.mood,
-          appetite:  w.appetite,
-          mobility:  w.mobility,
-          sleep:     w.sleep,
-          recordedAt: daysAgo(w.daysBack, 9),
+          patientProfileId: patientProfiles[2].id,
+          authorId:  doctorUser.id,
+          fromName:  `${doctorUser.name} (Doctor)`,
+          toRecipient:  "St Vincent's Cardiology",
+          toRecipients: ["St Vincent's Cardiology"],
+          referralType: "external",
+          subject:   "Urgent cardiology consult — post-surgical arrhythmia",
+          message:   "Patient has developed intermittent AF with RVR post-surgery. Requesting urgent review and consideration of rhythm vs rate control strategy.",
+          createdAt: daysAgo(1, 8),
         },
       });
     }
   }
 
+  // Chat messages (on first patient)
+  if (patientProfiles.length > 0 && nurseUser) {
+    await prisma.chatMessage.deleteMany({ where: { patientProfileId: patientProfiles[0].id } });
+    const n = patientProfiles[0].patientName.split(" ")[0];
+    await prisma.chatMessage.create({ data: { patientProfileId: patientProfiles[0].id, authorName: nurseUser.name, authorRole: `${nurseUser.name} (${authorRoleLabel})`, content: `Hi family — ${n} is doing well today. Good appetite at lunch and no complaints.`, createdAt: daysAgo(3, 11) } });
+    await prisma.chatMessage.create({ data: { patientProfileId: patientProfiles[0].id, authorName: "Family", authorRole: "Family", content: "Thank you for the update! Can we bring in some home-cooked food tomorrow?", createdAt: daysAgo(2, 19) } });
+    await prisma.chatMessage.create({ data: { patientProfileId: patientProfiles[0].id, authorName: nurseUser.name, authorRole: `${nurseUser.name} (${authorRoleLabel})`, content: "Absolutely — soft foods are fine, just avoid anything salty or high in sugar given the dietary restrictions.", createdAt: daysAgo(2, 20) } });
+    await prisma.chatMessage.create({ data: { patientProfileId: patientProfiles[0].id, authorName: "Family", authorRole: "Family", content: "Understood! We'll bring congee. See you tomorrow around 4 pm.", createdAt: daysAgo(1, 9) } });
+  }
+
+  // Family links
   for (const f of family) {
     const familyUser = await upsertUser(f.user);
-    console.log(`  ✓ FAMILY_MEMBER ${f.user.email} → ${f.linkedPatientEmail}`);
-
+    console.log(`  ✓ FAMILY_MEMBER  ${f.user.email} → ${f.linkedPatientEmail}`);
     const linkedPatientUser = await prisma.user.findUnique({ where: { email: f.linkedPatientEmail } });
     if (linkedPatientUser) {
       const linkedProfile = await prisma.patientProfile.findUnique({ where: { userId: linkedPatientUser.id } });
@@ -356,42 +412,62 @@ async function seedFacility(
 async function main() {
   console.log("Seeding Tracewell demo data...");
 
-  // Remove legacy demo accounts
   const removed = await prisma.user.deleteMany({ where: { email: { endsWith: "@tracewell.demo" } } });
   if (removed.count > 0) console.log(`Removed ${removed.count} legacy @tracewell.demo account(s)`);
 
   await seedFacility(
     "🏥  St Peter's Hospital",
-    HOSPITAL_STAFF,
-    HOSPITAL_PATIENTS,
-    HOSPITAL_FAMILY,
+    HOSPITAL_STAFF, HOSPITAL_PATIENTS, HOSPITAL_FAMILY,
     "sarah.jones@stpetershospital.com",
+    "dr.chen@stpetershospital.com",
     "Nurse",
   );
 
   await seedFacility(
     "🌅  Sunrise Aged Care",
-    AGED_CARE_STAFF,
-    AGED_CARE_PATIENTS,
-    AGED_CARE_FAMILY,
+    AGED_CARE_STAFF, AGED_CARE_PATIENTS, AGED_CARE_FAMILY,
     "mary.nguyen@sunriseagedcare.com.au",
+    "dr.patel@sunriseagedcare.com.au",
     "Carer",
   );
 
-  console.log("\n✅  Seed complete.");
-  console.log("\n── Demo credentials ──────────────────────────────────────────────");
-  console.log("  St Peter's Hospital  (org: hospital)");
-  console.log("    Nurse:   sarah.jones@stpetershospital.com   / nurse123");
-  console.log("    Doctor:  dr.chen@stpetershospital.com       / doctor123");
-  console.log("    Manager: p.walsh@stpetershospital.com       / manager123");
-  console.log("    Patient: amara.chen@stpetershospital.com    / patient123");
-  console.log("    Family:  lena.chen@gmail.com                / family123");
-  console.log("  Sunrise Aged Care  (org: agedcare)");
-  console.log("    Carer:   mary.nguyen@sunriseagedcare.com.au / nurse123");
-  console.log("    Doctor:  dr.patel@sunriseagedcare.com.au    / doctor123");
-  console.log("    Manager: j.wilson@sunriseagedcare.com.au    / manager123");
-  console.log("    Resident:margaret.wu@sunriseagedcare.com.au / patient123");
-  console.log("    Family:  tom.wu@gmail.com                   / family123");
+  console.log("\n✅  Seed complete.\n");
+  console.log("── Demo credentials ──────────────────────────────────────────────────────");
+  console.log("  🏥 St Peter's Hospital  (org: hospital)");
+  console.log("    Nurse:    sarah.jones@stpetershospital.com    / nurse123");
+  console.log("    Nurse:    j.kowalski@stpetershospital.com     / nurse123");
+  console.log("    Nurse:    a.okonkwo@stpetershospital.com      / nurse123");
+  console.log("    Doctor:   dr.chen@stpetershospital.com        / doctor123");
+  console.log("    Doctor:   dr.malik@stpetershospital.com       / doctor123");
+  console.log("    Manager:  p.walsh@stpetershospital.com        / manager123");
+  console.log("    Patient:  amara.chen@stpetershospital.com     / patient123");
+  console.log("    Patient:  david.osei@stpetershospital.com     / patient123");
+  console.log("    Patient:  priya.singh@stpetershospital.com    / patient123");
+  console.log("    Patient:  t.burke@stpetershospital.com        / patient123");
+  console.log("    Patient:  h.park@stpetershospital.com         / patient123");
+  console.log("    Family:   lena.chen@gmail.com                 / family123");
+  console.log("    Family:   kofi.osei@gmail.com                 / family123");
+  console.log("    Family:   ananya.singh@gmail.com              / family123");
+  console.log("    Family:   claire.burke@gmail.com              / family123");
+  console.log("");
+  console.log("  🌅 Sunrise Aged Care  (org: agedcare)");
+  console.log("    Nurse:    mary.nguyen@sunriseagedcare.com.au  / nurse123");
+  console.log("    Nurse:    t.bradley@sunriseagedcare.com.au    / nurse123");
+  console.log("    Carer:    l.santos@sunriseagedcare.com.au     / carer123");
+  console.log("    Carer:    m.webb@sunriseagedcare.com.au       / carer123");
+  console.log("    Carer:    j.kim@sunriseagedcare.com.au        / carer123");
+  console.log("    Doctor:   dr.patel@sunriseagedcare.com.au     / doctor123");
+  console.log("    Manager:  j.wilson@sunriseagedcare.com.au     / manager123");
+  console.log("    Resident: margaret.wu@sunriseagedcare.com.au  / patient123");
+  console.log("    Resident: robert.nguyen@sunriseagedcare.com.au/ patient123");
+  console.log("    Resident: elsie.campbell@sunriseagedcare.com.au/patient123");
+  console.log("    Resident: arthur.reid@sunriseagedcare.com.au  / patient123");
+  console.log("    Resident: dorothy.mason@sunriseagedcare.com.au/ patient123");
+  console.log("    Family:   tom.wu@gmail.com                    / family123");
+  console.log("    Family:   minh.nguyen@gmail.com               / family123");
+  console.log("    Family:   grace.reid@gmail.com                / family123");
+  console.log("    Family:   paul.mason@gmail.com                / family123");
+  console.log("──────────────────────────────────────────────────────────────────────────");
 }
 
 main()

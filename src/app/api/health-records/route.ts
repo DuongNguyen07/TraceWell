@@ -1,5 +1,5 @@
-// Legacy endpoint — superseded by /api/broadcast + /api/data which persist
-// wellbeing checks via the WellbeingCheck model.
+
+
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'

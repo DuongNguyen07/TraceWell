@@ -1,5 +1,5 @@
-// Legacy endpoint — superseded by /api/broadcast + /api/data which persist
-// care notes via the CareNote model. Redirected to the new model.
+
+
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'

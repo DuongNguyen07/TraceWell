@@ -1,12 +1,5 @@
-// Generates TWO discharge documents from one admission record:
-// - A clinical GP Summary, for the ongoing/referring GP
-// - A formal, third-person Patient Summary, for the patient's own record
-//
-// IMPORTANT: neither document contains AI-transcribed numeric vital sign
-// readings. The AI describes vitals only in qualitative clinical terms —
-// the exact numbers are appended separately by code (see
-// buildVitalsTableText in dashboard/page.tsx), directly from stored data,
-// eliminating any risk of the AI mis-transcribing or reordering a reading.
+
+
 
 import { NextRequest, NextResponse } from "next/server";
 
@@ -74,30 +67,30 @@ export async function POST(request: NextRequest) {
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`;
 
-    // ================================================================
-    // PROMPT — four rules, each fixing a specific real problem found in
-    // earlier test output:
-    //
-    // 1. NO AI-AUTHORED NUMBERS. The AI never states an exact vital sign
-    //    figure — only qualitative clinical description. Exact numbers
-    //    come from a separately code-generated table (see
-    //    buildVitalsTableText on the frontend), appended after this
-    //    response returns, guaranteeing numeric accuracy no matter what
-    //    the model does.
-    //
-    // 2. CLINICAL ACUITY MUST BE HONEST. Earlier output described a
-    //    critically low SpO2 in the same calm tone as a routine
-    //    discharge — clinically implausible. The model is now instructed
-    //    to reflect genuine concern when the qualitative picture warrants it.
-    //
-    // 3. AUDIENCE-CORRECT FOLLOW-UP. The GP document must never tell the
-    //    GP to "see the GP" — that instruction belongs only in the
-    //    patient document.
-    //
-    // 4. PATIENT SUMMARY IS A FORMAL THIRD-PERSON RECORD, not a personal
-    //    "you" letter — matching how real discharge paperwork given to
-    //    patients is actually written (a record ABOUT the patient).
-    // ================================================================
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
     const requestBody = {
       contents: [
         {

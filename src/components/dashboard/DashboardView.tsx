@@ -9,18 +9,14 @@ import HealthChart from "./HealthChart";
 import FamilyResidentView from "./FamilyResidentView";
 import ManagerView from "./ManagerView";
 
-// ================================================================
-// TYPES
-// ================================================================
+
 
 type Baseline = { mood: number; appetite: number; mobility: number; sleep: number };
 type WellbeingEntry = Baseline & { timestamp: number };
 type Profile = { preferences: string; routine: string; communicationStyle: string };
 type Medication = { id: string; name: string; dose: string; frequency: string };
 
-// A single vital signs reading. Every field is optional (number | null)
-// rather than required — a real observation round doesn't always capture
-// all five at once, and forcing every field would make the form unusable.
+
 type VitalSigns = {
   id: string;
   systolic: number | null;
@@ -33,9 +29,7 @@ type VitalSigns = {
   timestamp: number;
 };
 
-// A diagnosis / problem-list entry. Status is one of three states — a
-// Resolved condition is never deleted, only re-labelled, so the full
-// clinical history stays intact rather than being erased.
+
 type ProblemStatus = "Active" | "Chronic" | "Resolved" | "Other";
 
 type Diagnosis = {
@@ -61,17 +55,14 @@ type InAppNotification = {
   read: boolean;
 };
 
-// Events broadcast via BroadcastChannel (same browser) and SSE (cross-device).
-// Every event carries the FULL data object so receiving clients on other devices
-// can merge it directly into state without needing to read the sender's localStorage.
-// notifId (where present) links the event to the saved InAppNotification so the
-// receiving side can pre-seed seenNotifIds and avoid a duplicate toast from the poll.
+
 type LiveEvent =
   | { type: "care_note"; org: string; notifId: string; patientId: string; patientName: string; authorRole: string; preview: string; noteType: string; timestamp: number; note: CareNote }
   | { type: "wellbeing"; org: string; notifId?: string; patientId: string; patientName: string; authorRole: string; isConcern: boolean; timestamp: number; entry: WellbeingEntry }
   | { type: "chat"; org: string; patientId: string; patientName: string; authorName: string; authorRole: string; preview: string; timestamp: number; message: ChatMessage }
   | { type: "referral"; org: string; notifId: string; patientId: string; patientName: string; authorRole: string; toRecipients: string[]; subject: string; timestamp: number; referral: ReferralNote }
-  | { type: "vitals"; org: string; patientId: string; patientName: string; authorRole: string; timestamp: number; vitals: VitalSigns };
+  | { type: "vitals"; org: string; patientId: string; patientName: string; authorRole: string; timestamp: number; vitals: VitalSigns }
+  | { type: "ack_referral"; org: string; patientId: string; referralId: string; acknowledgedBy: string; acknowledgedAt: number };
 
 type HealthInfo = {
   allergies: string[];
@@ -134,7 +125,7 @@ type ReferralNote = {
   id: string;
   fromName: string;
   toRecipients: string[];
-  toRecipient?: string;  // legacy — stored before multi-recipient support
+  toRecipient?: string;  
   referralType: "internal" | "external";
   subject: string;
   message: string;
@@ -145,9 +136,9 @@ type ReferralNote = {
   shareCode?: string;
 };
 
-// audience distinguishes the clinical GP letter from the plain-language
-// patient-facing summary — real hospitals produce both, written for very
-// different readers, from the same admission record.
+type StaffMember = { id: string; name: string; role: string; hapId: string | null; label: string };
+
+
 type DischargeAudience = "gp" | "patient";
 
 type DischargeSummary = {
@@ -156,22 +147,22 @@ type DischargeSummary = {
   content: string;
   generatedBy: string;
   timestamp: number;
-  // Tracks whether this is still an editable AI draft, or has been
-  // reviewed and formally signed off by a doctor as the official document.
-  // Once finalized, editing is locked — matches real clinical practice,
-  // where a signed document is amended via a separate addendum, not
-  // silently rewritten.
+  
+  
+  
+  
+  
   status: "draft" | "finalized";
   finalizedBy?: string;
   finalizedAt?: number;
-  // Tracks whether a doctor has ever edited the AI-generated text, so the
-  // UI can show "edited by staff" rather than implying it's pure AI output.
+  
+  
   edited?: boolean;
 };
 
 const EMPTY_PROFILE: Profile = { preferences: "", routine: "", communicationStyle: "" };
 
-// ---------- Carer-specific types ----------
+
 type FallRiskLevel = "Low" | "Medium" | "High";
 
 type FallRiskAssessment = {
@@ -219,12 +210,7 @@ type CarerProfile = {
 
 const EMPTY_CARER_PROFILE: CarerProfile = { name: "", qualifications: "", phone: "", email: "" };
 
-// ================================================================
-// DEMO DATA
-// Stand-in for a real database — see loadFromStorage/saveToStorage below
-// for how this is currently persisted (browser localStorage, a temporary
-// measure pending a real Supabase connection).
-// ================================================================
+
 
 const DEMO_PATIENTS: Record<string, Patient[]> = {
   hospital: [
@@ -280,9 +266,7 @@ const FACILITY_NAMES: Record<string, string> = {
   agedcare: "Sunnybank Aged Care Residence",
 };
 
-// ================================================================
-// HELPER FUNCTIONS
-// ================================================================
+
 
 function roleLabel(role: string | null, org: string | null): string {
   const labels: Record<string, string> = {
@@ -328,7 +312,7 @@ function parseDataUrl(dataUrl: string): { mimeType: string; base64: string } {
   return { mimeType: mimeMatch ? mimeMatch[1] : "image/jpeg", base64 };
 }
 
-// ---------- Persistence — browser localStorage (temporary, until Supabase is wired in) ----------
+
 
 function loadFromStorage<T>(key: string, fallback: T): T {
   if (typeof window === "undefined") return fallback;
@@ -345,14 +329,11 @@ function saveToStorage<T>(key: string, value: T) {
   try {
     window.localStorage.setItem(key, JSON.stringify(value));
   } catch {
-    // fails silently on purpose — not critical enough to interrupt the user
+    
   }
 }
 
-// Server data is authoritative. For patients with server records, use the server
-// list directly and only append local items that are strictly newer than the
-// newest server item (i.e. notes the user added this session but not yet in DB).
-// This prevents stale localStorage entries from old seed runs appearing as duplicates.
+
 function mergeDataDicts<T extends { id?: string; timestamp?: number }>(
   local: Record<string, T[]>,
   server: Record<string, T[]>
@@ -361,7 +342,7 @@ function mergeDataDicts<T extends { id?: string; timestamp?: number }>(
   for (const [patientId, serverItems] of Object.entries(server)) {
     const serverIds = new Set(serverItems.map((x) => x.id).filter(Boolean) as string[]);
     const latestServerTs = serverItems.reduce((max, x) => Math.max(max, x.timestamp ?? 0), 0);
-    // Keep only local notes that (a) aren't already in server and (b) were added after the newest server note
+    
     const localNew = (result[patientId] ?? []).filter(
       (x) => x.id && !serverIds.has(x.id) && (x.timestamp ?? 0) > latestServerTs
     );
@@ -370,8 +351,7 @@ function mergeDataDicts<T extends { id?: string; timestamp?: number }>(
   return result;
 }
 
-// Fixes patients saved BEFORE the profile/medications/healthInfo fields existed —
-// fills in safe empty defaults so old saved data doesn't crash the UI.
+
 function normalizePatient(patient: Patient): Patient {
   const hi = patient.healthInfo;
   return {
@@ -387,11 +367,7 @@ function normalizePatient(patient: Patient): Patient {
   };
 }
 
-// Migrates old-shape wellbeing data. Originally each patient's entry was a
-// single Baseline object (no timestamp, no history — the latest check
-// simply overwrote the last). This detects that old shape and wraps it
-// into the new array-of-entries shape, so existing saved data doesn't
-// break when the data model changes.
+
 function normalizeWellbeingByPatient(raw: unknown): Record<string, WellbeingEntry[]> {
   const result: Record<string, WellbeingEntry[]> = {};
   if (!raw || typeof raw !== "object") return result;
@@ -421,8 +397,7 @@ function normalizeWellbeingByPatient(raw: unknown): Record<string, WellbeingEntr
   return result;
 }
 
-// Formats a vitals reading into readable text, skipping any field that
-// wasn't recorded — used both for display and for the AI context block.
+
 function formatVitals(v: VitalSigns): string {
   const parts: string[] = [];
   if (v.systolic !== null && v.diastolic !== null) parts.push(`BP ${v.systolic}/${v.diastolic} mmHg`);
@@ -433,11 +408,7 @@ function formatVitals(v: VitalSigns): string {
   return parts.length ? parts.join(", ") : "No readings recorded";
 }
 
-// Checks a single vital reading against standard adult clinical ranges —
-// established medical reference ranges, not something derived or guessed
-// by AI, same category of "flag for review" as the wellbeing-baseline
-// comparison already in the app. Returns a severity level used purely for
-// colour-coding, never a diagnosis.
+
 type VitalStatus = "normal" | "caution" | "concern";
 
 function vitalStatus(field: keyof Omit<VitalSigns, "id" | "authorRole" | "timestamp">, value: number | null): VitalStatus {
@@ -478,10 +449,7 @@ function statusColor(status: VitalStatus): string {
   return "text-ink";
 }
 
-// Formats a patient's full context — profile, medications, vitals, and
-// diagnoses — into plain text so AI prompts (handover, Q&A, family update)
-// actually use this information, rather than it being stored but never
-// surfaced to the AI.
+
 function personContextBlock(patient: Patient, latestVitals?: VitalSigns, diagnoses?: Diagnosis[]): string {
   const parts: string[] = [];
   if (patient.profile.preferences) parts.push(`Preferences: ${patient.profile.preferences}`);
@@ -493,10 +461,10 @@ function personContextBlock(patient: Patient, latestVitals?: VitalSigns, diagnos
   if (latestVitals) {
     parts.push(`Most recent vital signs: ${formatVitals(latestVitals)}`);
   }
-  // Only active/chronic conditions are surfaced to the AI — a resolved
-  // condition is historical and less relevant to a current handover or
-  // query, so it's deliberately excluded here even though it stays
-  // visible in the UI list.
+  
+  
+  
+  
   if (diagnoses && diagnoses.length) {
     const relevant = diagnoses.filter((d) => d.status !== "Resolved");
     if (relevant.length) {
@@ -506,12 +474,7 @@ function personContextBlock(patient: Patient, latestVitals?: VitalSigns, diagnos
   return parts.length ? parts.join("\n") : "No personalised profile recorded yet.";
 }
 
-// Helper functions specifically for the Discharge Summary feature. Unlike
-// personContextBlock above (used for the "personal profile" side of the
-// AI's context), these format the FULL clinical record — every diagnosis
-// regardless of status, every medication, every report, and the complete
-// vitals history — since a discharge summary needs the entire picture of
-// the admission, not just what's currently active.
+
 
 function formatDiagnosesForSummary(diagnoses: Diagnosis[]): string {
   if (!diagnoses.length) return "None recorded";
@@ -534,13 +497,7 @@ function formatVitalsHistoryForSummary(vitals: VitalSigns[]): string {
   return sorted.map((v) => `${formatDateTime(v.timestamp)}: ${formatVitals(v)}`).join(" | ");
 }
 
-// Builds a plain-text, CODE-generated table of exact vitals readings —
-// deliberately NOT authored by the AI, to eliminate any risk of numbers
-// being transcribed or reordered incorrectly (as happened with an earlier
-// BP reading that came back reversed). This gets appended directly onto
-// the GP summary after generation, so the clinically load-bearing numbers
-// always come straight from the actual stored patient data, verbatim —
-// never passed through the AI's own transcription at all.
+
 function buildVitalsTableText(vitals: VitalSigns[]): string {
   if (!vitals.length) return "No vitals recorded during this admission.";
   const sorted = [...vitals].sort((a, b) => a.timestamp - b.timestamp);
@@ -549,8 +506,7 @@ function buildVitalsTableText(vitals: VitalSigns[]): string {
     .join("\n");
 }
 
-// Generates a human-readable referral code: REF-YYYYMMDD-XXXXX
-// Excludes I/O/0/1 to avoid visual confusion when read aloud or printed.
+
 function generateReferralCode(): string {
   const d = new Date();
   const date = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
@@ -559,12 +515,7 @@ function generateReferralCode(): string {
   return `REF-${date}-${rand}`;
 }
 
-// Shared helper for reading fetch responses from our own /api routes.
-// Throws a specific, actionable error if the response isn't valid JSON —
-// this is what catches "the route file is missing/misnamed" (which returns
-// an HTML 404 page instead of JSON) and reports it distinctly from a
-// genuine network failure, rather than both looking identical to the user.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 async function parseJsonResponse(response: Response, routeName: string): Promise<any> {
   const rawText = await response.text();
   try {
@@ -577,7 +528,7 @@ async function parseJsonResponse(response: Response, routeName: string): Promise
   }
 }
 
-// ---------- Shift grouping (Doctor's Shift History panel) ----------
+
 
 type ShiftDef = { key: "morning" | "afternoon" | "night"; label: string; startHour: number; endHour: number };
 
@@ -587,21 +538,20 @@ const SHIFT_DEFS: ShiftDef[] = [
   { key: "night", label: "Night", startHour: 22, endHour: 6 },
 ];
 
-// Returns which shift a timestamp falls into, as a stable sortable key
-// plus a human-readable label like "Morning · 25 Jul".
+
 function getShiftPeriod(timestamp: number): { key: string; label: string } {
   const d = new Date(timestamp);
   const hour = d.getHours();
 
-  // Night shift wraps past midnight (22:00-06:00) — this handles both the
-  // "normal" case (morning/afternoon) and that wraparound case.
+  
+  
   let shift = SHIFT_DEFS.find((s) =>
     s.startHour < s.endHour ? hour >= s.startHour && hour < s.endHour : hour >= s.startHour || hour < s.endHour
   );
   if (!shift) shift = SHIFT_DEFS[2];
 
-  // A 2am note belongs to the night shift that STARTED the evening before,
-  // not a new night shift for the current calendar day.
+  
+  
   const dateForKey = new Date(d);
   if (shift.key === "night" && hour < 6) dateForKey.setDate(dateForKey.getDate() - 1);
 
@@ -622,11 +572,9 @@ function groupNotesByShift(notes: CareNote[]): ShiftGroup[] {
   return Object.values(groups).sort((a, b) => b.key.localeCompare(a.key));
 }
 
-// ================================================================
-// SMALL REUSABLE UI COMPONENTS
-// ================================================================
 
-// Read-only bar showing an already-saved wellbeing value against baseline.
+
+
 function WellbeingBar({ label, value, baseline }: { label: string; value: number; baseline: number }) {
   const delta = value - baseline;
   const pct = Math.max(0, Math.min(100, value * 10));
@@ -645,8 +593,7 @@ function WellbeingBar({ label, value, baseline }: { label: string; value: number
   );
 }
 
-// A draggable slider — used only inside the wellbeing entry form, distinct
-// from WellbeingBar above which only displays, never changes, a value.
+
 function WellbeingSliderInput({ label, value, onChange }: { label: string; value: number; onChange: (newValue: number) => void }) {
   return (
     <div className="flex items-center gap-3">
@@ -657,19 +604,17 @@ function WellbeingSliderInput({ label, value, onChange }: { label: string; value
   );
 }
 
-// HealthChart and FamilyResidentView are imported from their own files above.
 
-// ================================================================
-// MAIN DASHBOARD COMPONENT
-// ================================================================
+
+
 
 export default function DashboardView({ role: roleProp, org: orgProp }: { role?: string; org?: string } = {}) {
 
   const searchParams = useSearchParams();
 
-  // ---------- Identity, read from the URL set by the login page ----------
+  
   const { data: session } = useSession();
-  // org priority: prop (route-level override) → URL param → session JWT → default
+  
   const org = orgProp ?? searchParams.get("org") ?? session?.user?.org ?? "hospital";
   const role = roleProp ?? searchParams.get("role") ?? (session?.user?.role?.toLowerCase() ?? "staff");
   const staffName = searchParams.get("name") ?? session?.user?.name ?? "";
@@ -681,16 +626,17 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
   const personLabel = org === "hospital" ? "Patients" : "Residents";
   const personLabelSingular = org === "hospital" ? "patient" : "resident";
 
-  // Named role flags, checked in several places below to control what's
-  // visible. Kept as named booleans (rather than inline role === "..."
-  // checks scattered everywhere) so extending visibility later is a one-line change.
+  
+  
+  
   const isFamilyRole  = role === "family" || role === "family_member";
   const isPatientRole = role === "patient";
   const isDoctorRole  = role === "doctor";
   const isManagerRole = role === "manager" || role === "admin";
   const isCarerRole   = role === "carer";
+  const isNurseRole   = role === "nurse";
 
-  // ---------- Core data state ----------
+  
   const [hydrated, setHydrated] = useState(false);
 
   const [patients, setPatients] = useState<Patient[]>(() => (org ? DEMO_PATIENTS[org] ?? [] : []));
@@ -700,7 +646,7 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
   const [referralsByPatient, setReferralsByPatient] = useState<Record<string, ReferralNote[]>>({});
   const [vitalsByPatient, setVitalsByPatient] = useState<Record<string, VitalSigns[]>>({});
   const [diagnosesByPatient, setDiagnosesByPatient] = useState<Record<string, Diagnosis[]>>({});
-  // Discharge summary drafts per patient.
+  
   const [dischargeSummariesByPatient, setDischargeSummariesByPatient] = useState<Record<string, DischargeSummary[]>>({});
   const [fallRiskByPatient, setFallRiskByPatient] = useState<Record<string, FallRiskAssessment[]>>({});
   const [scheduleByPatient, setScheduleByPatient] = useState<Record<string, ScheduleItem[]>>({});
@@ -708,24 +654,24 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
   const [carerProfile, setCarerProfile] = useState<CarerProfile>(EMPTY_CARER_PROFILE);
   const [carerProfileOpen, setCarerProfileOpen] = useState(false);
   const [carerProfileDraft, setCarerProfileDraft] = useState<CarerProfile>(EMPTY_CARER_PROFILE);
-  // Family chat messages per patient — shared thread visible to all family members and staff.
+  
   const [chatMessagesByPatient, setChatMessagesByPatient] = useState<Record<string, ChatMessage[]>>({});
-  // Draft text for the staff-side family chat input (separate from FamilyResidentView's own input).
+  
   const [staffChatDraft, setStaffChatDraft] = useState("");
 
-  // In-app notifications and alert panel state.
+  
   const [notifications, setNotifications] = useState<InAppNotification[]>([]);
   const [notifPanelOpen, setNotifPanelOpen] = useState(false);
-  // Toast pop-ups for notifications arriving from other sessions.
+  
   const [toasts, setToasts] = useState<InAppNotification[]>([]);
-  // IDs we've already shown (or created ourselves) — prevents re-toasting.
+  
   const seenNotifIds = useRef<Set<string>>(new Set());
-  // BroadcastChannel for instant cross-tab push (faster than polling).
+  
   const bcRef = useRef<BroadcastChannel | null>(null);
-  // Stable ref so the async BC handler always reads the latest role/identity/patient state
-  // without needing the useEffect to re-subscribe on every render.
+  
+  
   const liveCtxRef = useRef({ isFamilyRole: false, isPatientRole: false, displayIdentity: "", patients: [] as Patient[] });
-  // Alert that fires when a wellbeing check has concerning metric drops.
+  
   const [wellbeingAlert, setWellbeingAlert] = useState<{
     patientName: string;
     concerns: { label: string; current: number; baseline: number; delta: number }[];
@@ -734,7 +680,7 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selectedPatient = patients.find((p) => p.id === selectedId);
 
-  // Keep the BC handler's context ref current every render so it reads fresh values.
+  
   liveCtxRef.current = { isFamilyRole, isPatientRole, displayIdentity, patients };
 
   const patientWellbeingHistory = selectedPatient ? wellbeingByPatient[selectedPatient.id] ?? [] : [];
@@ -743,34 +689,35 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
   const patientVitalsHistory = selectedPatient ? vitalsByPatient[selectedPatient.id] ?? [] : [];
   const latestVitals = patientVitalsHistory.length > 0 ? patientVitalsHistory[patientVitalsHistory.length - 1] : undefined;
 
-  // ---------- Wellbeing entry form state ----------
+  
   const [formOpen, setFormOpen] = useState(false);
   const [draft, setDraft] = useState<Baseline>({ mood: 5, appetite: 5, mobility: 5, sleep: 5 });
 
-  // ---------- Care note entry state ----------
+  
   const [noteDraft, setNoteDraft] = useState("");
   const [pendingImage, setPendingImage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [captioning, setCaptioning] = useState(false);
   const [captionError, setCaptionError] = useState("");
 
-  // ---------- Voice input state ----------
+  
   const [recording, setRecording] = useState(false);
   const [voiceError, setVoiceError] = useState("");
-  // `any` is used here because SpeechRecognition isn't a standard type
-  // TypeScript knows about — it's a browser-specific API.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  
+  
+  
   const recognitionRef = useRef<any>(null);
-  // After recording stops, voiceReviewMode lets the user amend the transcript before saving.
+  
   const [voiceReviewMode, setVoiceReviewMode] = useState(false);
 
-  // ---------- Camera state ----------
+  
   const [cameraMenuOpen, setCameraMenuOpen] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
+  const [cameraFor, setCameraFor] = useState<"note" | "report">("note");
   const videoRef = useRef<HTMLVideoElement>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
 
-  // ---------- AI feature state (handover, Q&A, family update, discharge) ----------
+  
   const [handoverText, setHandoverText] = useState<string | null>(null);
   const [handoverLoading, setHandoverLoading] = useState(false);
   const [handoverError, setHandoverError] = useState("");
@@ -784,45 +731,30 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
   const [familyUpdateLoading, setFamilyUpdateLoading] = useState(false);
   const [familyUpdateError, setFamilyUpdateError] = useState("");
 
-  // Discharge summary generation state — no separate "result" holder like
-  // handover has, since each generated summary is saved directly into
-  // dischargeSummariesByPatient and displayed from there.
   const [dischargeLoading, setDischargeLoading] = useState(false);
   const [dischargeError, setDischargeError] = useState("");
-
-  // Tracks which discharge summary (by id) is currently being edited —
-  // only one at a time, matching the accordion-style editing pattern used
-  // elsewhere in this file. editSummaryContent holds the in-progress
-  // textarea value while editing, separate from the saved content so
-  // cancelling doesn't lose the original text.
   const [editingSummaryId, setEditingSummaryId] = useState<string | null>(null);
   const [editSummaryContent, setEditSummaryContent] = useState("");
 
-  // ---------- Admit-patient form state ----------
   const [addPatientOpen, setAddPatientOpen] = useState(false);
   const [newPatientName, setNewPatientName] = useState("");
   const [newPatientAge, setNewPatientAge] = useState("");
   const [newPatientRoom, setNewPatientRoom] = useState("");
 
-  // ---------- Edit-patient form state ----------
   const [editPatientOpen, setEditPatientOpen] = useState(false);
   const [editWard, setEditWard] = useState("");
   const [editAge, setEditAge] = useState("");
 
-  // ---------- Profile edit form state ----------
   const [profileEditOpen, setProfileEditOpen] = useState(false);
   const [profileDraft, setProfileDraft] = useState<Profile>(EMPTY_PROFILE);
 
-  // ---------- Medication form state ----------
   const [medFormOpen, setMedFormOpen] = useState(false);
   const [medName, setMedName] = useState("");
   const [medDose, setMedDose] = useState("");
   const [medFrequency, setMedFrequency] = useState("");
 
-  // ---------- Shift History panel state (Doctor only) ----------
   const [expandedShiftKey, setExpandedShiftKey] = useState<string | null>(null);
 
-  // ---------- Reports & Imaging form state ----------
   const [reportFormOpen, setReportFormOpen] = useState(false);
   const [reportType, setReportType] = useState<ReportType>("Blood Test");
   const [reportTitle, setReportTitle] = useState("");
@@ -830,19 +762,29 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
   const [reportPendingImage, setReportPendingImage] = useState<string | null>(null);
   const reportFileInputRef = useRef<HTMLInputElement>(null);
 
-  // ---------- Referrals & Collaboration form state ----------
   const [referralFormOpen, setReferralFormOpen] = useState(false);
   const [referralRecipients, setReferralRecipients] = useState<string[]>([]);
-  const [referralRecipientInput, setReferralRecipientInput] = useState("");
+  const [referralSearchInput, setReferralSearchInput] = useState("");
+  const [referralDropdownOpen, setReferralDropdownOpen] = useState(false);
   const [referralType, setReferralType] = useState<"internal" | "external">("internal");
   const [referralSubject, setReferralSubject] = useState("");
   const [referralMessage, setReferralMessage] = useState("");
+  const [deleteReferralId, setDeleteReferralId] = useState<string | null>(null);
+  const [deleteNoteId, setDeleteNoteId] = useState<string | null>(null);
+  const [orgStaff, setOrgStaff] = useState<StaffMember[]>([]);
+  
+  const [changePwOpen, setChangePwOpen] = useState(false);
+  const [changePwCurrent, setChangePwCurrent] = useState("");
+  const [changePwNew, setChangePwNew] = useState("");
+  const [changePwConfirm, setChangePwConfirm] = useState("");
+  const [changePwError, setChangePwError] = useState("");
+  const [changePwSuccess, setChangePwSuccess] = useState(false);
 
 
-  // ---------- Vital Signs form state ----------
-  // Each field is a string (not a number) while being typed, since an
-  // empty input box needs to be representable — converted to number | null
-  // only when actually saving.
+  
+  
+  
+  
   const [vitalsFormOpen, setVitalsFormOpen] = useState(false);
   const [vitalsSystolic, setVitalsSystolic] = useState("");
   const [vitalsDiastolic, setVitalsDiastolic] = useState("");
@@ -851,13 +793,13 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
   const [vitalsOxygenSaturation, setVitalsOxygenSaturation] = useState("");
   const [vitalsRespiratoryRate, setVitalsRespiratoryRate] = useState("");
 
-  // ---------- Problem List / Diagnoses form state ----------
+  
   const [diagnosisFormOpen, setDiagnosisFormOpen] = useState(false);
   const [diagnosisCondition, setDiagnosisCondition] = useState("");
   const [diagnosisStatus, setDiagnosisStatus] = useState<ProblemStatus>("Active");
   const [diagnosisNotes, setDiagnosisNotes] = useState("");
 
-  // ---------- Carer tools form state ----------
+  
   const [fallRiskFormOpen, setFallRiskFormOpen] = useState(false);
   const [fallRiskLevel, setFallRiskLevel] = useState<FallRiskLevel>("Low");
   const [fallRiskFactors, setFallRiskFactors] = useState<string[]>([]);
@@ -874,26 +816,26 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
   const [familyPhone, setFamilyPhone] = useState("");
   const [familyEmail, setFamilyEmail] = useState("");
 
-  // ================================================================
-  // DATA LOADING & PERSISTENCE
-  //
-  // Loading real saved data happens inside useEffect (browser-only, runs
-  // AFTER the page's first render) rather than during the initial useState
-  // call. This avoids a "hydration mismatch" error: Next.js renders every
-  // page once on the server first (where localStorage doesn't exist, so it
-  // would fall back to demo data) and once in the browser (where it might
-  // load different real data) — those two renders need to match exactly,
-  // which is what starting from the same safe fallback on both, then
-  // swapping in real data only after mount, achieves.
-  // ================================================================
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
 
-  // Stop any live camera stream when the component unmounts.
+  
   useEffect(() => {
     return () => { cameraStreamRef.current?.getTracks().forEach((t) => t.stop()); };
   }, []);
 
-  // Assign srcObject once the <video> element is in the DOM (cameraOpen → true).
-  // setTimeout(..., 0) is not reliable — the DOM update may not have flushed yet.
+  
+  
   useEffect(() => {
     if (cameraOpen && videoRef.current && cameraStreamRef.current) {
       videoRef.current.srcObject = cameraStreamRef.current;
@@ -901,24 +843,24 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
     }
   }, [cameraOpen]);
 
-  // Family and patient roles: auto-select on mount so the view is never blank.
-  // Patient role tries to match by name first, then falls back to the first in the list.
-  // Family role always selects the first patient (family members see all patients in their org).
+  
+  
+  
   useEffect(() => {
     if ((!isFamilyRole && !isPatientRole) || !hydrated || patients.length === 0 || selectedId) return;
     const match = isPatientRole
       ? (patients.find((p) => staffName && p.name.toLowerCase() === staffName.toLowerCase()) ?? patients[0])
       : patients[0];
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    
     setSelectedId(match.id);
   }, [isFamilyRole, isPatientRole, hydrated, patients, staffName, selectedId]);
 
   useEffect(() => {
     if (!org) return;
 
-    // Load transient data (notes, vitals, wellbeing checks) from localStorage.
-    // These are session-local and not yet synced to the DB.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    
+    
+    
     setWellbeingByPatient(normalizeWellbeingByPatient(loadFromStorage(`tracewell:${org}:wellbeing`, {})));
     setNotesByPatient(loadFromStorage(`tracewell:${org}:notes`, {}));
     setReportsByPatient(loadFromStorage(`tracewell:${org}:reports`, {}));
@@ -932,20 +874,20 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
     setFamilyContactsByPatient(loadFromStorage(`tracewell:${org}:familycontacts`, {}));
     const storedNotifs = loadFromStorage<InAppNotification[]>(`tracewell:${org}:notifications`, []);
     setNotifications(storedNotifs);
-    // Pre-seed so existing notifications never trigger toast pop-ups
+    
     storedNotifs.forEach((n) => seenNotifIds.current.add(n.id));
 
-    // Patient list: prefer the DB (single source of truth for identity data).
-    // Fall back to the localStorage cache, then to the built-in demo data,
-    // so the UI is never blank when the DB is not reachable.
+    
+    
+    
     const cached = loadFromStorage(`tracewell:${org}:patients`, null);
     if (cached) setPatients((cached as Patient[]).map(normalizePatient));
     else        setPatients((DEMO_PATIENTS[org] ?? []).map(normalizePatient));
 
     setHydrated(true);
 
-    // Fetch server-side data to merge with localStorage — this makes cross-device
-    // and cross-browser data visible immediately on load (not just real-time).
+    
+    
     fetch(`/api/data?org=${org}`)
       .then((r) => r.ok ? r.json() : null)
       .then((serverData: Record<string, Record<string, unknown[]>> | null) => {
@@ -957,7 +899,12 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
         if (serverData.chat)      setChatMessagesByPatient((prev) => mergeDataDicts(prev, serverData.chat as Record<string, ChatMessage[]>));
         if (serverData.diagnoses) setDiagnosesByPatient((prev) => mergeDataDicts(prev, serverData.diagnoses as Record<string, Diagnosis[]>));
       })
-      .catch(() => { /* server data unavailable — localStorage is sufficient */ });
+      .catch(() => {  });
+
+    fetch(`/api/staff?org=${org}`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((data: { staff?: StaffMember[] } | null) => { if (data?.staff) setOrgStaff(data.staff); })
+      .catch(() => {});
 
     fetch(`/api/patients?org=${org}`)
       .then((r) => r.ok ? r.json() : null)
@@ -966,13 +913,13 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
           setPatients(data.patients.map(normalizePatient));
         }
       })
-      .catch(() => { /* DB not available — continue with cached/demo data */ });
+      .catch(() => {  });
   }, [org]);
 
-  // Each of these save-effects checks `hydrated` first — without that
-  // guard, they'd fire on the very first render too, BEFORE the load
-  // effect above has run, and would overwrite real saved data with the
-  // fallback demo data.
+  
+  
+  
+  
   useEffect(() => {
     if (hydrated && org) saveToStorage(`tracewell:${org}:patients`, patients);
   }, [patients, org, hydrated]);
@@ -1001,7 +948,7 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
     if (hydrated && org) saveToStorage(`tracewell:${org}:diagnoses`, diagnosesByPatient);
   }, [diagnosesByPatient, org, hydrated]);
 
-  // Save discharge summaries whenever they change.
+  
   useEffect(() => {
     if (hydrated && org) saveToStorage(`tracewell:${org}:discharge`, dischargeSummariesByPatient);
   }, [dischargeSummariesByPatient, org, hydrated]);
@@ -1037,10 +984,10 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
     if (hydrated && org) saveToStorage(`tracewell:${org}:notifications`, notifications);
   }, [notifications, org, hydrated]);
 
-  // ── Live event helpers ────────────────────────────────────────────────────
-  // showLiveToast and applyLiveEvent are called from both BroadcastChannel
-  // (same-browser tabs) and SSE (cross-device). They use liveCtxRef so they
-  // always read fresh role/identity/patient values without stale closures.
+  
+  
+  
+  
 
   function showLiveToast(t: InAppNotification) {
     seenNotifIds.current.add(t.id);
@@ -1048,16 +995,16 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
     setTimeout(() => setToasts((prev) => prev.filter((x) => x.id !== t.id)), 7000);
   }
 
-  // Merges a received LiveEvent into state and shows the appropriate toast/bell.
-  // Works for same-browser tabs (BroadcastChannel) and other devices (SSE).
+  
+  
   function applyLiveEvent(ev: LiveEvent) {
     const { isFamilyRole, isPatientRole, displayIdentity, patients } = liveCtxRef.current;
 
-    // Never process your own actions.
-    if (ev.authorRole === displayIdentity) return;
+    
+    if ((ev as { authorRole?: string }).authorRole === displayIdentity) return;
 
-    // Merge the full data payload into state and keep localStorage in sync
-    // so the data survives a page refresh on this device too.
+    
+    
     if (ev.type === "care_note") {
       setNotesByPatient((prev) => {
         const existing = prev[ev.patientId] ?? [];
@@ -1098,18 +1045,27 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
         saveToStorage(`tracewell:${org}:vitals`, updated);
         return updated;
       });
+    } else if (ev.type === "ack_referral") {
+      setReferralsByPatient((prev) => {
+        const list = prev[ev.patientId] ?? [];
+        const updated = { ...prev, [ev.patientId]: list.map((r) =>
+          r.id === ev.referralId ? { ...r, acknowledged: true, acknowledgedBy: ev.acknowledgedBy, acknowledgedAt: ev.acknowledgedAt } : r
+        ) };
+        saveToStorage(`tracewell:${org}:referrals`, updated);
+        return updated;
+      });
     }
 
-    // Pre-seed seenNotifIds so the poll doesn't fire a duplicate toast
-    // for the corresponding InAppNotification that was saved to localStorage.
+    
+    
     const notifId = (ev as { notifId?: string }).notifId;
     if (notifId) seenNotifIds.current.add(notifId);
 
-    // Notification routing — both bell (persistent) and toast (7-second pop-up).
+    
     const myPatientIds = new Set(patients.map((p) => p.id));
 
     if (isFamilyRole || isPatientRole) {
-      // Family / patient: only care about their own patients.
+      
       if (!myPatientIds.has(ev.patientId)) return;
 
       let message = "";
@@ -1131,20 +1087,21 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
       }
       if (!message) return;
 
+      const _ts = (ev as { timestamp?: number }).timestamp ?? Date.now();
       const liveNotif: InAppNotification = {
-        id: `live-${ev.type}-${ev.timestamp}`,
-        patientId: ev.patientId, patientName: ev.patientName,
-        message, type: notifType, authorRole: ev.authorRole,
-        timestamp: ev.timestamp, read: false,
+        id: `live-${ev.type}-${_ts}`,
+        patientId: ev.patientId, patientName: (ev as { patientName?: string }).patientName ?? "",
+        message, type: notifType, authorRole: (ev as { authorRole?: string }).authorRole ?? "",
+        timestamp: _ts, read: false,
       };
       seenNotifIds.current.add(liveNotif.id);
-      // Add to bell AND show toast
+      
       setNotifications((prev) =>
         prev.some((n) => n.id === liveNotif.id) ? prev : [liveNotif, ...prev]
       );
       showLiveToast(liveNotif);
     } else {
-      // Clinical staff: bell + toast for all cross-user events.
+      
       let message = "";
       let notifType: NotifType = "care_update";
       if (ev.type === "care_note") {
@@ -1166,11 +1123,12 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
       }
       if (!message) return;
 
+      const _ts2 = (ev as { timestamp?: number }).timestamp ?? Date.now();
       const liveNotif: InAppNotification = {
-        id: `live-${ev.type}-${ev.timestamp}`,
-        patientId: ev.patientId, patientName: ev.patientName,
-        message, type: notifType, authorRole: ev.authorRole,
-        timestamp: ev.timestamp, read: false,
+        id: `live-${ev.type}-${_ts2}`,
+        patientId: ev.patientId, patientName: (ev as { patientName?: string }).patientName ?? "",
+        message, type: notifType, authorRole: (ev as { authorRole?: string }).authorRole ?? "",
+        timestamp: _ts2, read: false,
       };
       seenNotifIds.current.add(liveNotif.id);
       setNotifications((prev) =>
@@ -1180,17 +1138,17 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
     }
   }
 
-  // ── Real-time cross-tab sync ────────────────────────────────────────────
-  // BroadcastChannel provides instant push (< 1ms) the moment another tab
-  // writes data. The storage event + 5-second poll stay as a fallback.
+  
+  
+  
   useEffect(() => {
     if (!org || !hydrated) return;
 
     const k = (s: string) => `tracewell:${org}:${s}`;
 
-    // ── BroadcastChannel: instant push to other tabs in the same browser ──
-    // The event payload carries the full data object so no localStorage read
-    // is needed — this is the same merge logic used by the SSE handler.
+    
+    
+    
     if (typeof BroadcastChannel !== "undefined") {
       const bc = new BroadcastChannel("tracewell-live");
       bcRef.current = bc;
@@ -1199,7 +1157,7 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
       };
     }
 
-    // ── Storage event + poll: fallback for missed BC events ──────────
+    
     function refreshLiveData() {
       const newNotes = loadFromStorage<Record<string, CareNote[]>>(k("notes"), {});
       setNotesByPatient((prev) => JSON.stringify(prev) !== JSON.stringify(newNotes) ? newNotes : prev);
@@ -1229,14 +1187,14 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
       window.removeEventListener("storage", onStorage);
       clearInterval(poll);
     };
-  // applyLiveEvent reads liveCtxRef.current so it's always current — no re-subscribe needed
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  
+  
   }, [org, hydrated]);
 
-  // ── SSE: cross-device real-time sync ─────────────────────────────────────
-  // Connects to /api/live so updates on any device push to this client instantly.
-  // Uses the same applyLiveEvent function as BroadcastChannel so behavior is
-  // identical regardless of whether the sender is in the same browser or not.
+  
+  
+  
+  
   useEffect(() => {
     if (!org || !hydrated) return;
 
@@ -1247,32 +1205,32 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
       try {
         const ev = JSON.parse(e.data) as LiveEvent;
         if (ev.org === org) applyLiveEvent(ev);
-      } catch { /* ignore malformed frames */ }
+      } catch {  }
     };
 
     es.onerror = () => {
     };
 
     return () => es.close();
-  // applyLiveEvent reads liveCtxRef.current so it's always current — no re-subscribe needed
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  
+  
   }, [org, hydrated]);
 
-  // ── Toast pop-up detection ────────────────────────────────────────────────
-  // Fires whenever notifications change. Unseen IDs (not in seenNotifIds) that
-  // weren't created by the current user trigger a 6-second toast pop-up.
+  
+  
+  
   useEffect(() => {
     if (!hydrated) return;
 
     const unseen = notifications.filter((n) => !seenNotifIds.current.has(n.id));
     if (unseen.length === 0) return;
 
-    // Mark immediately so re-renders don't re-trigger
+    
     unseen.forEach((n) => seenNotifIds.current.add(n.id));
 
     const visiblePatientIds = new Set(patients.map((p) => p.id));
     const toShow = unseen.filter((n) => {
-      if (n.authorRole === displayIdentity) return false; // skip own notifications
+      if (n.authorRole === displayIdentity) return false; 
       if (isFamilyRole || isPatientRole) return visiblePatientIds.has(n.patientId);
       return true;
     });
@@ -1286,20 +1244,31 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
     });
   }, [notifications, hydrated, displayIdentity, isFamilyRole, isPatientRole, patients]);
 
-  // ================================================================
-  // DERIVED VALUES
-  // ================================================================
+  
+  
+  
 
   const patientNotes = selectedPatient ? notesByPatient[selectedPatient.id] ?? [] : [];
   const sortedNotes = [...patientNotes].sort((a, b) => b.timestamp - a.timestamp);
 
-  // All non-sensitive notes, newest-first — shown to family/resident via FamilyResidentView.
+  
   const visibleNotes = [...patientNotes]
     .filter((n) => !n.sensitive)
     .sort((a, b) => b.timestamp - a.timestamp);
 
-  // Only clinical documentation types feed into shift history —
-  // family_update notes are a separate concern.
+  
+  const lastClinicalActivity: { authorRole: string; timestamp: number } | undefined = (() => {
+    if (!selectedPatient) return undefined;
+    const candidates: { authorRole: string; timestamp: number }[] = [];
+    const clinicalNote = visibleNotes.find((n) => /\b(Nurse|Carer|Doctor)\b/.test(n.authorRole));
+    if (clinicalNote) candidates.push({ authorRole: clinicalNote.authorRole, timestamp: clinicalNote.timestamp });
+    const latestVital = [...(vitalsByPatient[selectedPatient.id] ?? [])].sort((a, b) => b.timestamp - a.timestamp)[0];
+    if (latestVital?.authorRole) candidates.push({ authorRole: latestVital.authorRole, timestamp: latestVital.timestamp });
+    return candidates.sort((a, b) => b.timestamp - a.timestamp)[0];
+  })();
+
+  
+  
   const shiftGroups = groupNotesByShift(
     patientNotes.filter((n) => n.type === "text" || n.type === "image" || n.type === "voice")
   );
@@ -1309,13 +1278,19 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
   const sortedReports = [...patientReports].sort((a, b) => b.timestamp - a.timestamp);
 
   const patientReferrals = selectedPatient ? referralsByPatient[selectedPatient.id] ?? [] : [];
-  const sortedReferrals = [...patientReferrals].sort((a, b) => b.timestamp - a.timestamp);
+  const visibleReferrals = patientReferrals.filter((r) => {
+    if (isManagerRole || !staffName) return true;
+    const isSender   = r.fromName.includes(staffName);
+    const isReceiver = (r.toRecipients ?? []).some((rec) => rec.includes(staffName));
+    return isSender || isReceiver;
+  });
+  const sortedReferrals = [...visibleReferrals].sort((a, b) => b.timestamp - a.timestamp);
 
   const sortedVitals = [...patientVitalsHistory].sort((a, b) => b.timestamp - a.timestamp);
 
-  // This patient's diagnoses. Active and Chronic sort first (what matters
-  // most day-to-day), Resolved sinks to the bottom — within each group,
-  // newest first.
+  
+  
+  
   const patientDiagnoses = selectedPatient ? diagnosesByPatient[selectedPatient.id] ?? [] : [];
   const sortedDiagnoses = [...patientDiagnoses].sort((a, b) => {
     const rank = (s: ProblemStatus) => (s === "Resolved" ? 1 : 0);
@@ -1323,31 +1298,31 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
     return rankDiff !== 0 ? rankDiff : b.timestamp - a.timestamp;
   });
 
-  // This patient's discharge summary drafts, newest first.
+  
   const patientDischargeSummaries = selectedPatient ? dischargeSummariesByPatient[selectedPatient.id] ?? [] : [];
   const sortedDischargeSummaries = [...patientDischargeSummaries].sort((a, b) => b.timestamp - a.timestamp);
 
-  // ================================================================
-  // ACTIONS — helpers
-  // ================================================================
+  
+  
+  
 
-  // Sends an event to:
-  //  1. Other tabs in the same browser (BroadcastChannel — instant, no round trip)
-  //  2. All connected clients on any device (SSE via /api/broadcast — cross-device)
-  // The event carries the full data payload so SSE receivers don't need
-  // to access the sender's localStorage (which is browser-local).
+  
+  
+  
+  
+  
   function broadcast(event: LiveEvent) {
     bcRef.current?.postMessage(event);
     fetch("/api/broadcast", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(event),
-    }).catch(() => {/* fire-and-forget — SSE is best-effort */});
+    }).catch(() => {});
   }
 
-  // ================================================================
-  // ACTIONS — Family chat
-  // ================================================================
+  
+  
+  
 
   function addChatMessage(content: string) {
     if (!selectedPatient) return;
@@ -1374,9 +1349,9 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
     });
   }
 
-  // ================================================================
-  // ACTIONS — Wellbeing
-  // ================================================================
+  
+  
+  
 
   function openForm() {
     if (!selectedPatient) return;
@@ -1384,9 +1359,9 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
     setFormOpen(true);
   }
 
-  // Appends a new entry to the patient's history array rather than
-  // overwriting a single stored object — this is what preserves history
-  // for HealthTrendChart to plot.
+  
+  
+  
   function saveWellbeingCheck() {
     if (!selectedPatient) return;
     const newEntry: WellbeingEntry = { ...draft, timestamp: Date.now() };
@@ -1395,11 +1370,11 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
       [selectedPatient.id]: [...(wellbeingByPatient[selectedPatient.id] ?? []), newEntry],
     };
     setWellbeingByPatient(updatedWellbeing);
-    // Save before broadcasting so receiving tabs read fresh data.
+    
     if (org) saveToStorage(`tracewell:${org}:wellbeing`, updatedWellbeing);
     setFormOpen(false);
 
-    // Detect concerning drops against the patient's baseline.
+    
     const bl = selectedPatient.baseline;
     const METRIC_LABELS: { key: keyof Baseline; label: string }[] = [
       { key: "mood",      label: "Mood" },
@@ -1414,7 +1389,7 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
     const isConcern = concerns.length > 0;
     const wellbeingNotifId = isConcern ? crypto.randomUUID() : undefined;
 
-    // Broadcast every wellbeing check so family/patient tabs update instantly.
+    
     broadcast({
       type: "wellbeing", org,
       notifId: wellbeingNotifId,
@@ -1446,9 +1421,9 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
     setFormOpen(false);
   }
 
-  // ================================================================
-  // ACTIONS — Care notes (text / photo / voice)
-  // ================================================================
+  
+  
+  
 
   async function handleImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -1458,7 +1433,7 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
   }
 
   function startVoice() {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    
     const SpeechRecognitionClass = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
     if (!SpeechRecognitionClass) {
       setVoiceError("Voice input isn't supported in this browser — try Chrome, or type the note instead.");
@@ -1467,8 +1442,8 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
     setVoiceError("");
     setVoiceReviewMode(false);
 
-    // Request mic with noise-suppression constraints to activate hardware-level
-    // noise reduction before the speech API opens the audio device.
+    
+    
     navigator.mediaDevices?.getUserMedia({
       audio: { noiseSuppression: true, echoCancellation: true, autoGainControl: true },
     }).then((s) => s.getTracks().forEach((t) => t.stop())).catch(() => {});
@@ -1477,20 +1452,20 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = "en-AU";
-    recognition.onresult = (event: any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
+    recognition.onresult = (event: any) => { 
       let transcript = "";
       for (let i = 0; i < event.results.length; i++) transcript += event.results[i][0].transcript;
       setNoteDraft(transcript);
     };
-    // When recording ends, enter review mode so the user can verify and amend
-    // the transcript before it's saved as a note.
+    
+    
     recognition.onend = () => {
       setRecording(false);
       setVoiceReviewMode(true);
     };
-    // Every possible failure reason gets a specific, readable message
-    // instead of failing silently.
-    recognition.onerror = (event: any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
+    
+    
+    recognition.onerror = (event: any) => { 
       setRecording(false);
       const messages: Record<string, string> = {
         "not-allowed": "Microphone access was blocked. Check your browser's site permissions and allow microphone access, then try again.",
@@ -1514,9 +1489,9 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
     setRecording(false);
   }
 
-  // ================================================================
-  // ACTIONS — Camera (take photo)
-  // ================================================================
+  
+  
+  
 
   async function openCamera() {
     setCameraMenuOpen(false);
@@ -1525,7 +1500,7 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
       return;
     }
     try {
-      // Prefer back camera on mobile; fall back to any camera on desktop.
+      
       let stream: MediaStream;
       try {
         stream = await navigator.mediaDevices.getUserMedia({
@@ -1536,8 +1511,8 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
       }
       cameraStreamRef.current = stream;
       setCameraOpen(true);
-      // srcObject is assigned in the useEffect([cameraOpen]) below, which fires
-      // after React has committed the <video> element to the DOM.
+      
+      
     } catch {
       setCaptionError("Camera access was denied. Tap 'Upload' to choose a photo from your device instead.");
     }
@@ -1545,15 +1520,16 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
 
   function capturePhoto() {
     const video = videoRef.current;
-    // readyState < 2 means the video hasn't decoded a frame yet — drawing it
-    // would produce a blank black canvas.
+    
+    
     if (!video || video.readyState < 2 || !video.videoWidth) return;
     const canvas = document.createElement("canvas");
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     canvas.getContext("2d")?.drawImage(video, 0, 0);
     const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
-    setPendingImage(dataUrl);
+    if (cameraFor === "report") setReportPendingImage(dataUrl);
+    else setPendingImage(dataUrl);
     closeCamera();
   }
 
@@ -1609,10 +1585,10 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
       [selectedPatient.id]: [...(notesByPatient[selectedPatient.id] ?? []), newNote],
     };
     setNotesByPatient(updatedNotes);
-    // Save before broadcasting so the receiving tab reads fresh notes.
+    
     if (org) saveToStorage(`tracewell:${org}:notes`, updatedNotes);
 
-    // Broadcast immediately so family/patient tabs pop up a toast in real time.
+    
     const noteNotifId = crypto.randomUUID();
     broadcast({
       type: "care_note", org, notifId: noteNotifId,
@@ -1622,7 +1598,7 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
       note: newNote,
     });
 
-    // Also persist the notification for the bell panel history.
+    
     const notif: InAppNotification = {
       id: noteNotifId,
       patientId: selectedPatient.id,
@@ -1645,23 +1621,25 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
   }
 
   function deleteNote(noteId: string) {
+    setDeleteNoteId(noteId);
+  }
+
+  function confirmDeleteNote(noteId: string) {
     if (!selectedPatient) return;
-    const confirmed = window.confirm("Delete this note? This cannot be undone.");
-    if (!confirmed) return;
     setNotesByPatient((prev) => ({
       ...prev,
       [selectedPatient.id]: (prev[selectedPatient.id] ?? []).filter((n) => n.id !== noteId),
     }));
   }
 
-  // ================================================================
-  // ACTIONS — Vital Signs
-  // ================================================================
+  
+  
+  
 
-  // Converts the vitals form's text inputs into a saved reading.
-  // parseFloat on an empty string returns NaN, so each field checks for
-  // that and stores null instead — this is what makes every vital
-  // genuinely optional rather than defaulting to a misleading 0.
+  
+  
+  
+  
   function saveVitals() {
     if (!selectedPatient) return;
 
@@ -1682,8 +1660,8 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
       timestamp: Date.now(),
     };
 
-    // Guard: don't save a completely empty reading (all fields null) —
-    // that would just clutter the history with a useless entry.
+    
+    
     const hasAnyValue = [
       newVitals.systolic, newVitals.diastolic, newVitals.heartRate,
       newVitals.temperature, newVitals.oxygenSaturation, newVitals.respiratoryRate,
@@ -1722,10 +1700,10 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
     }));
   }
 
-  // ================================================================
-  // ACTIONS — AI features (each calls its own secure /api route so
-  // GEMINI_API_KEY stays server-side, never exposed to the browser)
-  // ================================================================
+  
+  
+  
+  
 
   async function generateHandover() {
     if (!selectedPatient) return;
@@ -1786,10 +1764,10 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
     }
   }
 
-  // Unlike generateHandover/askQuestion, this doesn't hold its result in a
-  // separate "result" state — it's saved directly into notesByPatient as a
-  // family_update-type note, since a family update is meant to be a
-  // permanent, shareable record entry, not a temporary on-screen result.
+  
+  
+  
+  
   async function generateFamilyUpdate() {
     if (!selectedPatient) return;
 
@@ -1845,11 +1823,11 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
     }
   }
 
-// Generates BOTH discharge documents (GP + Patient) from one API call,
-  // saving each as its own independently editable/finalizable entry. A
-  // doctor might finalise the GP letter first and refine patient wording
-  // separately, so keeping them as two separate entries — rather than one
-  // combined record — matches how that review actually happens.
+
+  
+  
+  
+  
   async function generateDischargeSummary() {
     if (!selectedPatient) return;
 
@@ -1881,10 +1859,10 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
 
       const now = Date.now();
 
-      // The AI never states exact vitals numbers (see route.ts) — this
-      // builds the real, exact readings directly from stored data and
-      // appends them to the AI's qualitative narrative, guaranteeing the
-      // numbers on the final document are always exactly what's on record.
+      
+      
+      
+      
       const vitalsTable = buildVitalsTableText(patientVitalsHistory);
       const gpContent = `${data.gpSummary}\n\nRECORDED VITALS (verbatim, from patient record):\n${vitalsTable}`;
 
@@ -1902,10 +1880,10 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
         audience: "patient",
         content: data.patientSummary,
         generatedBy: displayIdentity,
-        // Offset by 1ms so sorting newest-first gives a predictable,
-        // consistent order (GP letter just above the patient summary)
-        // rather than depending on exact tie-breaking behaviour when two
-        // timestamps happen to be identical.
+        
+        
+        
+        
         timestamp: now + 1,
         status: "draft",
       };
@@ -1933,8 +1911,8 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
       [selectedPatient.id]: (prev[selectedPatient.id] ?? []).filter((s) => s.id !== summaryId),
     }));
   }
-  // Opens edit mode for a specific summary, seeding the textarea with its
-  // current content so editing starts from what's actually saved.
+  
+  
   function startEditingSummary(summary: DischargeSummary) {
     setEditingSummaryId(summary.id);
     setEditSummaryContent(summary.content);
@@ -1945,10 +1923,10 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
     setEditSummaryContent("");
   }
 
-  // Saves the doctor's edited text back onto the correct summary, and marks
-  // it as `edited: true` — this is what lets the UI later show "edited by
-  // staff" rather than presenting amended text as if it were the AI's
-  // original, unmodified output.
+  
+  
+  
+  
   function saveEditedSummary(summaryId: string) {
     if (!selectedPatient) return;
     setDischargeSummariesByPatient((prev) => ({
@@ -1961,11 +1939,11 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
     setEditSummaryContent("");
   }
 
-  // Marks a summary as finalized — the doctor's formal sign-off that this
-  // is now the official discharge plan. Requires confirmation since this
-  // is a deliberate, meaningful action: once finalized, the content can no
-  // longer be edited through this UI (see the render logic below, which
-  // only shows Edit/Finalise buttons for status === "draft").
+  
+  
+  
+  
+  
   function finalizeSummary(summaryId: string) {
     if (!selectedPatient) return;
     const confirmed = window.confirm(
@@ -1982,9 +1960,9 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
     }));
   }
 
-  // ================================================================
-  // ACTIONS — Patient admission, profile, medications
-  // ================================================================
+  
+  
+  
 
   function admitPatient() {
     const name = newPatientName.trim();
@@ -2062,13 +2040,13 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
     setPatients((prev) => prev.map((p) => (p.id === selectedPatient.id ? { ...p, medications: p.medications.filter((m) => m.id !== medId) } : p)));
   }
 
-  // ================================================================
-  // ACTIONS — Reports & Imaging
-  // No AI captioning here deliberately — a report's title/notes are
-  // entered directly by staff, since auto-describing a scan/blood-test
-  // image is a much higher-stakes AI task than describing a general care
-  // photo, and is out of scope for this build.
-  // ================================================================
+  
+  
+  
+  
+  
+  
+  
 
   async function handleReportImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -2123,13 +2101,13 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
     return icons[type];
   }
 
-  // ================================================================
-  // ACTIONS — Referrals & Collaboration
-  // Doctor-only creation by convention — the "+ New referral" button is
-  // only rendered when isDoctorRole is true. Any staff role can
-  // acknowledge a referral, since the point is confirming someone on the
-  // receiving end has actually seen it, not restricting who can respond.
-  // ================================================================
+  
+  
+  
+  
+  
+  
+  
 
   function addReferral() {
     if (!selectedPatient || referralRecipients.length === 0 || !referralSubject.trim()) return;
@@ -2179,7 +2157,8 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
     if (org) saveToStorage(`tracewell:${org}:notifications`, updatedNotifs);
 
     setReferralRecipients([]);
-    setReferralRecipientInput("");
+    setReferralSearchInput("");
+    setReferralDropdownOpen(false);
     setReferralType("internal");
     setReferralSubject("");
     setReferralMessage("");
@@ -2188,33 +2167,70 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
 
   function acknowledgeReferral(referralId: string) {
     if (!selectedPatient) return;
-    setReferralsByPatient((prev) => ({
-      ...prev,
-      [selectedPatient.id]: (prev[selectedPatient.id] ?? []).map((r) =>
-        r.id === referralId
-          ? { ...r, acknowledged: true, acknowledgedBy: displayIdentity, acknowledgedAt: Date.now() }
-          : r
-      ),
-    }));
+    const now = Date.now();
+    setReferralsByPatient((prev) => {
+      const updated = {
+        ...prev,
+        [selectedPatient.id]: (prev[selectedPatient.id] ?? []).map((r) =>
+          r.id === referralId ? { ...r, acknowledged: true, acknowledgedBy: displayIdentity, acknowledgedAt: now } : r
+        ),
+      };
+      if (org) saveToStorage(`tracewell:${org}:referrals`, updated);
+      return updated;
+    });
+    broadcast({ type: "ack_referral", org, patientId: selectedPatient.id, referralId, acknowledgedBy: displayIdentity, acknowledgedAt: now });
+  }
+
+  function confirmDeleteReferral(referralId: string) {
+    if (!selectedPatient) return;
+    setReferralsByPatient((prev) => {
+      const updated = { ...prev, [selectedPatient.id]: (prev[selectedPatient.id] ?? []).filter((r) => r.id !== referralId) };
+      if (org) saveToStorage(`tracewell:${org}:referrals`, updated);
+      return updated;
+    });
+    setDeleteReferralId(null);
   }
 
   function deleteReferral(referralId: string) {
-    if (!selectedPatient) return;
-    const confirmed = window.confirm("Delete this referral note? This cannot be undone.");
-    if (!confirmed) return;
-    setReferralsByPatient((prev) => ({
-      ...prev,
-      [selectedPatient.id]: (prev[selectedPatient.id] ?? []).filter((r) => r.id !== referralId),
-    }));
+    setDeleteReferralId(referralId);
   }
 
-  // ================================================================
-  // ACTIONS — Problem List / Diagnoses
-  // A Resolved diagnosis is never deleted from the record — only
-  // re-labelled via updateDiagnosisStatus — preserving the full clinical
-  // history rather than erasing it. Deletion remains available separately
-  // for genuine data-entry mistakes.
-  // ================================================================
+  
+  
+  
+
+  async function changePassword() {
+    if (!changePwNew || changePwNew !== changePwConfirm) {
+      setChangePwError("New passwords do not match.");
+      return;
+    }
+    if (changePwNew.length < 8) {
+      setChangePwError("Password must be at least 8 characters.");
+      return;
+    }
+    setChangePwError("");
+    const res = await fetch("/api/change-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ currentPassword: changePwCurrent, newPassword: changePwNew }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setChangePwError((data as { error?: string }).error ?? "Failed to change password.");
+      return;
+    }
+    setChangePwSuccess(true);
+    setChangePwCurrent(""); setChangePwNew(""); setChangePwConfirm("");
+    setTimeout(() => { setChangePwOpen(false); setChangePwSuccess(false); }, 2000);
+  }
+
+  
+  
+  
+  
+  
+  
+  
 
   function addDiagnosis() {
     if (!selectedPatient || !diagnosisCondition.trim()) return;
@@ -2233,7 +2249,7 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
       [selectedPatient.id]: [...(prev[selectedPatient.id] ?? []), newDiagnosis],
     }));
 
-    // Persist to DB so other clinical staff see it on load
+    
     fetch("/api/diagnoses", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -2266,7 +2282,7 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
     }));
   }
 
-  // ---------- Carer tools: fall risk, care schedule, family contacts ----------
+  
 
   function toggleFallRiskFactor(factor: string) {
     setFallRiskFactors((prev) => (prev.includes(factor) ? prev.filter((f) => f !== factor) : [...prev, factor]));
@@ -2381,9 +2397,9 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
     return "bg-teal-soft text-teal";
   }
 
-  // Human-readable label and colour styling for the audience badge shown
-  // on each discharge summary card — makes it immediately visually clear
-  // which document is the clinical GP letter versus the patient-facing one.
+  
+  
+  
   function audienceLabel(audience: DischargeAudience): string {
     return audience === "gp" ? "GP Summary" : "Patient Summary";
   }
@@ -2396,9 +2412,9 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
     signOut({ callbackUrl: "/" });
   }
 
-  // ================================================================
-  // RENDER
-  // ================================================================
+  
+  
+  
 
   return (
     <div className="min-h-screen bg-background">
@@ -2420,12 +2436,12 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
           <div className="flex items-center gap-3">
             <span className="chip">{displayIdentity}</span>
 
-            {/* Notification bell */}
+            
             <div className="relative">
               <button
                 onClick={() => {
                   setNotifPanelOpen((o) => !o);
-                  // Mark all as read when panel opens
+                  
                   if (!notifPanelOpen) {
                     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
                   }
@@ -2453,7 +2469,7 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
                     {notifications.length === 0 ? (
                       <div className="px-4 py-6 text-center text-sm text-ink-soft">No notifications yet.</div>
                     ) : (
-                      // For family/patient roles, only show notifications for their visible patients.
+                      
                       (() => {
                         const visiblePatientIds = new Set(patients.map((p) => p.id));
                         const filtered = (isFamilyRole || isPatientRole)
@@ -2505,7 +2521,7 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
         </div>
       </header>
 
-      {/* Manager dashboard — replaces the entire sidebar + detail layout */}
+      
       {isManagerRole ? (
         <ManagerView
           patients={patients}
@@ -2513,10 +2529,12 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
           wellbeingByPatient={wellbeingByPatient}
           vitalsByPatient={vitalsByPatient}
           diagnosesByPatient={diagnosesByPatient}
+          referralsByPatient={referralsByPatient}
+          fallRiskByPatient={fallRiskByPatient}
           org={org}
         />
       ) : isPatientRole ? (
-        /* Patient view — no sidebar, shows only their own record full-width */
+        
         <div className="container-page py-6">
           {selectedPatient ? (
             <FamilyResidentView
@@ -2529,6 +2547,7 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
               currentUserRole={displayIdentity}
               onSendChatMessage={addChatMessage}
               showChat={false}
+              lastClinicalActivity={lastClinicalActivity}
             />
           ) : (
             <div className="flex h-40 items-center justify-center text-sm text-ink-soft">
@@ -2616,6 +2635,7 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
                 currentUserName={staffName}
                 currentUserRole={displayIdentity}
                 onSendChatMessage={addChatMessage}
+                lastClinicalActivity={lastClinicalActivity}
               />
             ) : (
               <div>
@@ -2727,14 +2747,14 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
                   )}
                 </div>
 
-                {isCarerRole && (() => {
+                {(isCarerRole || (org === "agedcare" && (isNurseRole || isDoctorRole))) && (() => {
                   const fallRiskHistory = fallRiskByPatient[selectedPatient.id] ?? [];
                   const latestFallRisk = fallRiskHistory.length > 0 ? fallRiskHistory[fallRiskHistory.length - 1] : undefined;
                   const scheduleItems = [...(scheduleByPatient[selectedPatient.id] ?? [])].sort((a, b) => a.time.localeCompare(b.time));
                   const familyContacts = familyContactsByPatient[selectedPatient.id] ?? [];
                   return (
                     <>
-                      {/* Fall risk */}
+                      
                       <div className="mt-6 rounded-xl border border-border bg-background p-4">
                         <div className="mb-3 flex items-center justify-between">
                           <span className="text-sm font-semibold text-ink">Fall risk</span>
@@ -2807,7 +2827,7 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
                         )}
                       </div>
 
-                      {/* Care schedule */}
+                      
                       <div className="mt-6 rounded-xl border border-border bg-background p-4">
                         <div className="mb-3 flex items-center justify-between">
                           <span className="text-sm font-semibold text-ink">Care schedule</span>
@@ -2857,7 +2877,7 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
                         )}
                       </div>
 
-                      {/* Family details */}
+                      
                       <div className="mt-6 rounded-xl border border-border bg-background p-4">
                         <div className="mb-3 flex items-center justify-between">
                           <span className="text-sm font-semibold text-ink">Family details</span>
@@ -2927,7 +2947,7 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
                     </div>
                   ) : latestCheck ? (
                     <>
-                      {/* Characterised health matrix — per-metric snapshot vs baseline */}
+                      
                       {(() => {
                         const metrics = [
                           { label: "Mood",     cur: latestCheck.mood,     base: selectedPatient.baseline.mood },
@@ -3173,7 +3193,7 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
 
                       {reportPendingImage && (
                         <div className="flex items-center gap-2 rounded-lg bg-teal-soft p-2">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          
                           <img src={reportPendingImage} alt="Report attachment" className="h-12 w-12 rounded object-cover" />
                           <span className="flex-1 text-xs text-ink">Image attached.</span>
                           <button onClick={() => setReportPendingImage(null)} className="text-xs text-ink-soft hover:text-ink">Remove</button>
@@ -3183,11 +3203,18 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
                       <div className="flex items-center gap-2">
                         <input ref={reportFileInputRef} type="file" accept="image/*" onChange={handleReportImageSelect} className="hidden" />
                         <button
+                          onClick={() => { setCameraFor("report"); openCamera(); }}
+                          className="rounded-lg border border-border px-3 py-2 text-sm text-ink-soft hover:bg-secondary"
+                          title="Take a photo of the scan or report"
+                        >
+                          <Camera size={12} className="mr-1 inline" /> Take photo
+                        </button>
+                        <button
                           onClick={() => reportFileInputRef.current?.click()}
                           className="rounded-lg border border-border px-3 py-2 text-sm text-ink-soft hover:bg-secondary"
                           title="Attach an image of the report/scan"
                         >
-                          <Camera size={12} className="mr-1 inline" /> Attach image
+                          <Camera size={12} className="mr-1 inline" /> Upload
                         </button>
                         <div className="flex-1" />
                         <button onClick={addReport} className="rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">
@@ -3220,7 +3247,7 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
                             </div>
                             {report.notes && <div className="mt-1 text-sm text-ink">{report.notes}</div>}
                             {report.imageUrl && (
-                              // eslint-disable-next-line @next/next/no-img-element
+                              
                               <img src={report.imageUrl} alt={report.title} className="mt-2 max-h-48 rounded-lg border border-border object-cover" />
                             )}
                           </div>
@@ -3243,7 +3270,7 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
 
                   {referralFormOpen && (
                     <div className="mb-4 flex flex-col gap-3 rounded-lg border border-border p-3">
-                      {/* Internal / External toggle */}
+                      
                       <div className="flex gap-1 rounded-full bg-secondary p-0.5 w-fit">
                         {(["internal", "external"] as const).map((t) => (
                           <button key={t} onClick={() => setReferralType(t)}
@@ -3253,38 +3280,92 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
                         ))}
                       </div>
 
-                      {/* Recipient chip input */}
-                      <div className="flex min-h-[40px] flex-wrap items-center gap-1.5 rounded-lg border border-border px-2 py-1.5 focus-within:ring-2 focus-within:ring-ring">
-                        {referralRecipients.map((r) => (
-                          <span key={r} className="flex items-center gap-1 rounded-full bg-teal-soft px-2.5 py-0.5 text-xs font-medium text-teal">
-                            {r}
-                            <button onClick={() => setReferralRecipients((prev) => prev.filter((x) => x !== r))} className="ml-0.5 rounded-full hover:opacity-60">
-                              <X size={10} />
-                            </button>
-                          </span>
-                        ))}
-                        <input
-                          value={referralRecipientInput}
-                          onChange={(e) => setReferralRecipientInput(e.target.value)}
-                          onKeyDown={(e) => {
-                            if ((e.key === "Enter" || e.key === ",") && referralRecipientInput.trim()) {
-                              e.preventDefault();
-                              const val = referralRecipientInput.trim().replace(/,$/, "");
-                              if (val && !referralRecipients.includes(val)) setReferralRecipients((prev) => [...prev, val]);
-                              setReferralRecipientInput("");
-                            }
-                          }}
-                          onBlur={() => {
-                            if (referralRecipientInput.trim()) {
-                              const val = referralRecipientInput.trim();
-                              if (!referralRecipients.includes(val)) setReferralRecipients((prev) => [...prev, val]);
-                              setReferralRecipientInput("");
-                            }
-                          }}
-                          placeholder={referralRecipients.length === 0 ? "Add recipient (press Enter)" : "Add another…"}
-                          className="min-w-[140px] flex-1 bg-transparent text-sm outline-none"
-                        />
-                      </div>
+                      
+                      {referralRecipients.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5">
+                          {referralRecipients.map((r) => (
+                            <span key={r} className="flex items-center gap-1 rounded-full bg-teal-soft px-2.5 py-0.5 text-xs font-medium text-teal">
+                              {r}
+                              <button onClick={() => setReferralRecipients((prev) => prev.filter((x) => x !== r))} className="ml-0.5 rounded-full hover:opacity-60">
+                                <X size={10} />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      
+                      {referralType === "internal" ? (() => {
+                        const suggestions = orgStaff
+                          .filter((s) =>
+                            !referralRecipients.some((r) => r.includes(s.name)) &&
+                            (referralSearchInput === "" ||
+                              s.name.toLowerCase().includes(referralSearchInput.toLowerCase()) ||
+                              (s.hapId?.toLowerCase().includes(referralSearchInput.toLowerCase()) ?? false))
+                          )
+                          .slice(0, 8);
+                        return (
+                          <div className="relative">
+                            <input
+                              value={referralSearchInput}
+                              onChange={(e) => { setReferralSearchInput(e.target.value); setReferralDropdownOpen(true); }}
+                              onFocus={() => setReferralDropdownOpen(true)}
+                              onBlur={() => setTimeout(() => setReferralDropdownOpen(false), 150)}
+                              placeholder={referralRecipients.length === 0 ? "Search by name or HAP ID…" : "+ Add participant"}
+                              className="w-full rounded-lg border border-border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                            />
+                            {referralDropdownOpen && suggestions.length > 0 && (
+                              <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-lg border border-border bg-background shadow-lg">
+                                {suggestions.map((s) => (
+                                  <button
+                                    key={s.id}
+                                    onMouseDown={(e) => {
+                                      e.preventDefault();
+                                      const label = `${s.name}${s.hapId ? ` · ${s.hapId}` : ""} (${s.role.charAt(0) + s.role.slice(1).toLowerCase()})`;
+                                      if (!referralRecipients.includes(label)) setReferralRecipients((prev) => [...prev, label]);
+                                      setReferralSearchInput("");
+                                      setReferralDropdownOpen(false);
+                                    }}
+                                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-secondary"
+                                  >
+                                    <span className="font-medium text-ink">{s.name}</span>
+                                    {s.hapId && <span className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px] text-ink-soft">{s.hapId}</span>}
+                                    <span className="ml-auto text-xs text-muted-foreground capitalize">{s.role.toLowerCase()}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })() : (
+                        <div className="flex gap-2">
+                          <input
+                            value={referralSearchInput}
+                            onChange={(e) => setReferralSearchInput(e.target.value)}
+                            onKeyDown={(e) => {
+                              if ((e.key === "Enter" || e.key === ",") && referralSearchInput.trim()) {
+                                e.preventDefault();
+                                const val = referralSearchInput.trim().replace(/,$/, "");
+                                if (val && !referralRecipients.includes(val)) setReferralRecipients((prev) => [...prev, val]);
+                                setReferralSearchInput("");
+                              }
+                            }}
+                            placeholder="Recipient name or institution"
+                            className="flex-1 rounded-lg border border-border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                          />
+                          <button
+                            onClick={() => {
+                              if (referralSearchInput.trim() && !referralRecipients.includes(referralSearchInput.trim())) {
+                                setReferralRecipients((prev) => [...prev, referralSearchInput.trim()]);
+                                setReferralSearchInput("");
+                              }
+                            }}
+                            className="rounded-lg bg-secondary px-3 py-2 text-sm text-ink hover:opacity-80"
+                          >
+                            Add
+                          </button>
+                        </div>
+                      )}
 
                       <input
                         value={referralSubject}
@@ -3304,7 +3385,7 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
                           className="rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50">
                           Send referral
                         </button>
-                        <button onClick={() => { setReferralFormOpen(false); setReferralRecipients([]); setReferralRecipientInput(""); }}
+                        <button onClick={() => { setReferralFormOpen(false); setReferralRecipients([]); setReferralSearchInput(""); setReferralDropdownOpen(false); }}
                           className="rounded-full px-4 py-2 text-sm text-ink-soft hover:bg-secondary">
                           Cancel
                         </button>
@@ -3360,7 +3441,8 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
                               </div>
                               <button onClick={() => deleteReferral(referral.id)} title="Delete this referral" className="shrink-0 text-xs text-muted-foreground hover:text-destructive"><X size={12} /></button>
                             </div>
-                            {!isExternal && !referral.acknowledged && (
+                            {!isExternal && !referral.acknowledged && !!staffName &&
+                              referral.toRecipients?.some((r) => r.includes(staffName)) && (
                               <button
                                 onClick={() => acknowledgeReferral(referral.id)}
                                 className="mt-2 rounded-full bg-secondary px-3 py-1 text-xs font-medium text-ink hover:opacity-80"
@@ -3423,15 +3505,7 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
                 )}
 
 
-                {/* ================================================================
-                     DISCHARGE SUMMARY PANEL — Doctor only.
-
-                     Clicking "Generate draft" creates TWO separate entries at once:
-                     one audience="gp" (clinical, for the ongoing GP) and one
-                     audience="patient" (plain language, for the patient). Each is
-                     its own independently editable/finalizable card, distinguished
-                     visually by the audience badge at the top of each card.
-                   ================================================================ */}
+                
                 {isDoctorRole && (
                   <div className="mt-6 rounded-xl border border-border bg-background p-4">
                     <div className="mb-3 flex items-center justify-between">
@@ -3445,14 +3519,14 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
                       </button>
                     </div>
 
-                    {/* Loading state — shown once, covers both documents being generated together */}
+                    
                     {dischargeLoading && (
                       <div className="mb-3 rounded-lg bg-teal-soft p-3 text-sm text-ink">
                         Pulling together the admission record for {selectedPatient.name}...
                       </div>
                     )}
 
-                    {/* Error state — e.g. the API route failed, or Gemini was overloaded */}
+                    
                     {dischargeError && (
                       <div className="mb-3 flex items-center gap-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-700">
                         <span className="flex-1">{dischargeError}</span>
@@ -3464,24 +3538,17 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
                       <p className="text-sm text-ink-soft">No discharge summary drafted yet.</p>
                     ) : (
                       <div className="flex flex-col gap-3">
-                        {/* Each entry — whether GP or Patient audience — renders through
-                            this exact same card structure, just with a different badge
-                            and different content. Sorted newest-first, and since the GP
-                            entry is always created 1ms before the Patient entry (see
-                            generateDischargeSummary), the GP card naturally appears
-                            first within each generation batch. */}
+                        
                         {sortedDischargeSummaries.map((summary) => {
                           const isEditingThis = editingSummaryId === summary.id;
                           const isFinalized = summary.status === "finalized";
 
                           return (
                             <div key={summary.id} className="rounded-lg border border-border p-3">
-                              {/* ---------- Card header: audience badge + author/date + status badge + delete ---------- */}
+                              
                               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                  {/* NEW — this is "piece 4": the audience badge,
-                                      distinguishing GP Summary from Patient Summary
-                                      at a glance */}
+                                  
                                   <span className={`rounded-full px-2 py-0.5 font-medium ${audienceBadgeStyle(summary.audience)}`}>
                                     {audienceLabel(summary.audience)}
                                   </span>
@@ -3495,15 +3562,13 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
                                     <span className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-800">Draft — pending review</span>
                                   )}
                                 </div>
-                                {/* Delete stays available even for finalized summaries —
-                                    for genuine data-entry mistakes — but editing/finalizing
-                                    do not, once locked (see below). */}
+                                
                                 <button onClick={() => deleteDischargeSummary(summary.id)} className="text-xs text-muted-foreground hover:text-destructive">
                                   <X size={12} />
                                 </button>
                               </div>
 
-                              {/* ---------- Card body: either the edit textarea, or the read-only display ---------- */}
+                              
                               {isEditingThis ? (
                                 <div className="flex flex-col gap-2">
                                   <textarea
@@ -3540,9 +3605,7 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
                                       <p className="mt-2 text-xs text-muted-foreground">
                                         This is an AI-generated draft. Review, edit if needed, and finalise once confirmed.
                                       </p>
-                                      {/* Edit and Finalise are only offered while still a
-                                          draft — once finalized, this whole block is
-                                          replaced by the "official document" note above. */}
+                                      
                                       <div className="mt-2 flex gap-2">
                                         <button
                                           onClick={() => startEditingSummary(summary)}
@@ -3608,7 +3671,7 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
 
                   {pendingImage && (
                     <div className="mb-3 flex items-center gap-2 rounded-lg bg-teal-soft p-2">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      
                       <img src={pendingImage} alt="Selected" className="h-12 w-12 rounded object-cover" />
                       <span className="flex-1 text-xs text-ink">Photo ready — the AI will describe it automatically when you click Add.</span>
                       <button onClick={() => setPendingImage(null)} className="text-xs text-ink-soft hover:text-ink">Remove</button>
@@ -3640,7 +3703,7 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
                     </div>
                   )}
 
-                  {/* Voice review panel — shown after recording stops so the transcript can be amended */}
+                  
                   {voiceReviewMode && !recording && noteDraft.trim() && (
                     <div className="mb-3 rounded-lg border border-teal bg-teal-soft p-3">
                       <div className="mb-1.5 flex items-center justify-between">
@@ -3669,7 +3732,7 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
                         className="flex-1 rounded-lg border border-border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
                       />
                       <input ref={fileInputRef} type="file" accept="image/*" onChange={handleImageSelect} className="hidden" />
-                      {/* Camera button with dropdown: Take photo / Upload */}
+                      
                       <div className="relative">
                         <button
                           onClick={() => setCameraMenuOpen((v) => !v)}
@@ -3681,7 +3744,7 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
                         {cameraMenuOpen && (
                           <div className="absolute bottom-full right-0 z-20 mb-1 min-w-36 overflow-hidden rounded-lg border border-border bg-card shadow-lift">
                             <button
-                              onClick={openCamera}
+                              onClick={() => { setCameraFor("note"); openCamera(); }}
                               className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-ink hover:bg-secondary"
                             >
                               <Video size={13} /> Take photo
@@ -3722,7 +3785,7 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
                               {note.type === "family_update" && <span className="ml-1 inline-flex items-center gap-0.5">· <Heart size={10} className="inline" /> Family update</span>}
                             </div>
                             {note.imageUrl && (
-                              // eslint-disable-next-line @next/next/no-img-element
+                              
                               <img src={note.imageUrl} alt="Care note attachment" className="mt-1 max-h-40 rounded-lg border border-border object-cover" />
                             )}
                             <div className="mt-0.5 text-sm text-ink">{note.content}</div>
@@ -3734,7 +3797,7 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
                   </div>
                 </div>
 
-                {/* Family Messages — shared real-time thread between family and all staff */}
+                
                 <div className="mt-6 rounded-xl border border-border bg-background p-4">
                   <div className="mb-3 flex items-center gap-2">
                     <MessageSquare className="h-4 w-4 text-teal" />
@@ -3799,7 +3862,7 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
           )}
         </main>
       </div>
-      )} {/* end of non-manager / non-patient layout */}
+      )} 
 
       {editPatientOpen && selectedPatient && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setEditPatientOpen(false)}>
@@ -3869,7 +3932,7 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
         </div>
       )}
 
-      {/* Carer profile modal */}
+      
       {carerProfileOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setCarerProfileOpen(false)}>
           <div onClick={(e) => e.stopPropagation()} className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-lift">
@@ -3906,7 +3969,7 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
         </div>
       )}
 
-      {/* Camera modal — live viewfinder with capture button */}
+      
       {cameraOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={closeCamera}>
           <div onClick={(e) => e.stopPropagation()} className="flex flex-col items-center gap-4 rounded-2xl border border-border bg-card p-6 shadow-lift">
@@ -3933,7 +3996,7 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
         </div>
       )}
 
-      {/* Wellbeing concern alert modal — fires after saving a concerning check */}
+      
       {wellbeingAlert && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-sm rounded-2xl border border-amber-300 bg-card p-6 shadow-lift">
@@ -3991,7 +4054,113 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
         </div>
       )}
 
-      {/* ── Toast notifications (cross-session real-time pop-ups) ── */}
+      
+      {deleteReferralId !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-sm rounded-2xl border border-border bg-card p-6 shadow-lift">
+            <h2 className="text-base font-semibold text-ink">Delete referral?</h2>
+            <p className="mt-2 text-sm text-ink-soft">
+              This referral will be permanently removed. This action cannot be undone.
+            </p>
+            <div className="mt-5 flex gap-3">
+              <button
+                onClick={() => { confirmDeleteReferral(deleteReferralId); setDeleteReferralId(null); }}
+                className="flex-1 rounded-full bg-destructive py-2 text-sm font-medium text-white hover:opacity-80"
+              >
+                Delete
+              </button>
+              <button
+                onClick={() => setDeleteReferralId(null)}
+                className="flex-1 rounded-full border border-border py-2 text-sm text-ink-soft hover:bg-secondary"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      
+      {deleteNoteId !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-sm rounded-2xl border border-border bg-card p-6 shadow-lift">
+            <h2 className="text-base font-semibold text-ink">Delete this note?</h2>
+            <p className="mt-2 text-sm text-ink-soft">
+              This note will be permanently removed. This action cannot be undone.
+            </p>
+            <div className="mt-5 flex gap-3">
+              <button
+                onClick={() => { confirmDeleteNote(deleteNoteId); setDeleteNoteId(null); }}
+                className="flex-1 rounded-full bg-destructive py-2 text-sm font-medium text-white hover:opacity-80"
+              >
+                Delete
+              </button>
+              <button
+                onClick={() => setDeleteNoteId(null)}
+                className="flex-1 rounded-full border border-border py-2 text-sm text-ink-soft hover:bg-secondary"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      
+      {changePwOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setChangePwOpen(false)}>
+          <div onClick={(e) => e.stopPropagation()} className="w-full max-w-sm rounded-2xl border border-border bg-card p-6 shadow-lift">
+            <h2 className="text-base font-semibold text-ink">Change password</h2>
+            <div className="mt-4 flex flex-col gap-3">
+              <div>
+                <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Current password</label>
+                <input
+                  type="password"
+                  value={changePwCurrent}
+                  onChange={(e) => setChangePwCurrent(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">New password</label>
+                <input
+                  type="password"
+                  value={changePwNew}
+                  onChange={(e) => setChangePwNew(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Confirm new password</label>
+                <input
+                  type="password"
+                  value={changePwConfirm}
+                  onChange={(e) => setChangePwConfirm(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && changePassword()}
+                  className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                />
+              </div>
+              {changePwError && (
+                <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{changePwError}</p>
+              )}
+              {changePwSuccess && (
+                <p className="rounded-lg bg-teal-soft px-3 py-2 text-sm text-teal">Password updated successfully.</p>
+              )}
+              <div className="mt-1 flex gap-2">
+                <button onClick={changePassword} className="flex-1 rounded-full bg-primary py-2 text-sm font-medium text-primary-foreground">
+                  Update password
+                </button>
+                <button onClick={() => { setChangePwOpen(false); setChangePwCurrent(""); setChangePwNew(""); setChangePwConfirm(""); setChangePwError(""); setChangePwSuccess(false); }}
+                  className="rounded-full px-4 py-2 text-sm text-ink-soft hover:bg-secondary">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      
       {toasts.length > 0 && (
         <div className="pointer-events-none fixed bottom-4 right-4 z-[200] flex flex-col gap-2">
           {toasts.map((toast) => (

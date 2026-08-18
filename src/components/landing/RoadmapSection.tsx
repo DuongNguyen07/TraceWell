@@ -1,14 +1,10 @@
-import AnimateIn from "@/components/AnimateIn";
+import AnimateIn from "@/components/ui/AnimateIn";
 
-// S-curve road: bottom-left → rise → S-dip → final rise → top-right
+
 const ROAD =
   "M -30 540 C 150 540, 200 200, 420 210 C 640 220, 700 500, 900 470 C 1000 455, 1100 200, 1230 80";
 
-// ── Milestone data ────────────────────────────────────────────────────────
-// cx/cy are bezier-computed road centerline positions.
-// card.x/y are positioned in non-overlapping horizontal zones:
-//   M1 → [15–243]   M2 → [270–490]   M3 → [510–732]   M4 → [760–982]
-// lineEnd connects the milestone circle to the nearest card edge.
+
 
 type Phase = {
   phase: string;
@@ -57,11 +53,11 @@ const PHASES: Phase[] = [
 ];
 
 const CARD_W = 222;
-const ITEM_Y0 = 64;   // y offset from card top where first bullet starts
-const ITEM_H  = 15;   // line height per bullet
+const ITEM_Y0 = 64;   
+const ITEM_H  = 15;   
 
 function cardH(n: number) {
-  // top-pad(12) + badge(20) + gap(8) + title(15) + gap(9) + bullets + bottom-pad(14)
+  
   return ITEM_Y0 + n * ITEM_H + 14;
 }
 
@@ -69,7 +65,7 @@ export default function RoadmapSection() {
   return (
     <section id="roadmap" className="scroll-mt-16 overflow-hidden py-20 md:py-28">
 
-      {/* Heading inside normal page padding */}
+      
       <div className="container-page mb-12">
         <AnimateIn>
           <p className="eyebrow mb-3">Roadmap</p>
@@ -82,7 +78,7 @@ export default function RoadmapSection() {
         </AnimateIn>
       </div>
 
-      {/* Full-width SVG — no card, no border, edge to edge */}
+      
       <AnimateIn delay={120}>
         <svg
           viewBox="0 0 1200 580"
@@ -101,22 +97,22 @@ export default function RoadmapSection() {
             </filter>
           </defs>
 
-          {/* ── Road ── */}
-          {/* Drop-shadow layer */}
+          
+          
           <path d={ROAD} fill="none" stroke="#1e293b" strokeWidth="92"
             strokeLinecap="round" filter="url(#rdShadow)" />
-          {/* Edge highlight ring */}
+          
           <path d={ROAD} fill="none" stroke="#3d5166" strokeWidth="90" strokeLinecap="round" />
-          {/* Main asphalt surface */}
+          
           <path d={ROAD} fill="none" stroke="#1e293b" strokeWidth="84" strokeLinecap="round" />
-          {/* Subtle inner sheen */}
+          
           <path d={ROAD} fill="none" stroke="rgba(255,255,255,0.035)"
             strokeWidth="80" strokeLinecap="round" />
-          {/* Centre dashes */}
+          
           <path d={ROAD} fill="none" stroke="rgba(255,255,255,0.44)"
             strokeWidth="4.5" strokeDasharray="32 20" strokeLinecap="round" />
 
-          {/* ── Connector lines (behind cards) ── */}
+          
           {PHASES.map((p, i) => (
             <line
               key={`conn-${i}`}
@@ -126,7 +122,7 @@ export default function RoadmapSection() {
             />
           ))}
 
-          {/* ── Cards ── */}
+          
           {PHASES.map((p, i) => {
             const h = cardH(p.items.length);
             const { x, y } = p.card;
@@ -137,7 +133,7 @@ export default function RoadmapSection() {
                   fill="white" stroke="#e2e8f0" strokeWidth="1"
                   filter="url(#cdShadow)"
                 />
-                {/* Phase badge */}
+                
                 <rect x={x + 12} y={y + 12} width={p.badgeW} height={20} rx={10} fill={p.color} />
                 <text
                   x={x + 12 + p.badgeW / 2} y={y + 25.5}
@@ -145,13 +141,13 @@ export default function RoadmapSection() {
                   fontFamily="ui-sans-serif,system-ui,-apple-system,sans-serif"
                   letterSpacing="0.03em"
                 >{p.phase}</text>
-                {/* Title */}
+                
                 <text
                   x={x + 12} y={y + 49}
                   fontSize="12.5" fontWeight="600" fill="#0f172a"
                   fontFamily="ui-sans-serif,system-ui,-apple-system,sans-serif"
                 >{p.title}</text>
-                {/* Bullets */}
+                
                 {p.items.map((item, j) => (
                   <text
                     key={`item-${j}`}
@@ -164,7 +160,7 @@ export default function RoadmapSection() {
             );
           })}
 
-          {/* ── Milestone dots (topmost) ── */}
+          
           {PHASES.map((p, i) => (
             <g key={`dot-${i}`}>
               <circle cx={p.cx} cy={p.cy} r={18} fill="white" />

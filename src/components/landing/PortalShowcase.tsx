@@ -57,7 +57,7 @@ export default function PortalShowcase() {
 
   return (
     <>
-      {/* ── Desktop: horizontal accordion ─────────────────────────────── */}
+      
       <div
         className="hidden md:flex"
         style={{ height: 460, gap: 6, borderRadius: 20, overflow: "hidden" }}
@@ -83,7 +83,7 @@ export default function PortalShowcase() {
                 transition: `flex-grow 0.65s ${EASE_OUT}`,
               }}
             >
-              {/* Photo with Ken Burns zoom */}
+              
               <div
                 style={{
                   position: "absolute",
@@ -104,7 +104,7 @@ export default function PortalShowcase() {
                 />
               </div>
 
-              {/* Base gradient overlay — always visible */}
+              
               <div
                 style={{
                   position: "absolute",
@@ -115,7 +115,7 @@ export default function PortalShowcase() {
                 }}
               />
 
-              {/* Dark scrim that deepens when active so text is legible */}
+              
               <div
                 style={{
                   position: "absolute",
@@ -126,7 +126,7 @@ export default function PortalShowcase() {
                 }}
               />
 
-              {/* Collapsed label — role name, fades away on hover */}
+              
               <div
                 style={{
                   position: "absolute",
@@ -156,7 +156,7 @@ export default function PortalShowcase() {
                 </span>
               </div>
 
-              {/* Slide-up detail panel */}
+              
               <div
                 style={{
                   position: "absolute",
@@ -170,7 +170,7 @@ export default function PortalShowcase() {
                   pointerEvents: isActive ? "auto" : "none",
                 }}
               >
-                {/* Tagline */}
+                
                 <p
                   style={{
                     fontSize: 10,
@@ -188,7 +188,7 @@ export default function PortalShowcase() {
                   {portal.tagline}
                 </p>
 
-                {/* Role name */}
+                
                 <h3
                   style={{
                     fontSize: 22,
@@ -206,7 +206,7 @@ export default function PortalShowcase() {
                   {portal.role}
                 </h3>
 
-                {/* Description */}
+                
                 <p
                   style={{
                     fontSize: 12,
@@ -223,7 +223,7 @@ export default function PortalShowcase() {
                   {portal.desc}
                 </p>
 
-                {/* Feature chips */}
+                
                 <div
                   style={{
                     display: "flex",
@@ -259,7 +259,7 @@ export default function PortalShowcase() {
         })}
       </div>
 
-      {/* ── Mobile: tap-to-expand stack ───────────────────────────────── */}
+      
       <div className="flex flex-col gap-3 md:hidden">
         {PORTALS.map((portal, i) => {
           const isOpen = touched === i;
@@ -276,25 +276,25 @@ export default function PortalShowcase() {
                 transition: `height 0.5s ${EASE_OUT}`,
               }}
             >
-              {/* Photo */}
+              
               <div style={{ position: "absolute", inset: 0, transform: isOpen ? "scale(1.04)" : "scale(1)", transition: `transform 0.6s ${EASE_OUT}` }}>
                 <Image src={portal.image} alt={portal.role} fill sizes="100vw" quality={95} className="object-cover object-center" />
               </div>
 
-              {/* Gradient */}
+              
               <div style={{
                 position: "absolute", inset: 0,
                 background: `linear-gradient(to top, ${portal.accent}e0 0%, ${portal.accent}80 40%, rgba(0,0,0,0.25) 100%)`,
               }} />
 
-              {/* Collapsed row */}
+              
               <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", padding: "0 20px", gap: 10, opacity: isOpen ? 0 : 1, transition: `opacity 0.25s ${EASE}` }}>
                 <span style={{ fontSize: 15, fontWeight: 600, color: "#fff", textShadow: "0 1px 4px rgba(0,0,0,0.4)" }}>{portal.role}</span>
                 <span style={{ fontSize: 12, color: "rgba(255,255,255,0.6)" }}>{portal.tagline}</span>
                 <span style={{ marginLeft: "auto", color: "rgba(255,255,255,0.6)", fontSize: 18, transform: isOpen ? "rotate(180deg)" : "rotate(0deg)", transition: `transform 0.35s ${EASE}` }}>↓</span>
               </div>
 
-              {/* Expanded content */}
+              
               <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "0 20px 20px", opacity: isOpen ? 1 : 0, transform: isOpen ? "translateY(0)" : "translateY(12px)", transition: `opacity 0.4s ${EASE} 80ms, transform 0.4s ${EASE} 80ms` }}>
                 <p style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.14em", color: "rgba(255,255,255,0.55)", marginBottom: 4 }}>{portal.tagline}</p>
                 <h3 style={{ fontSize: 20, fontWeight: 700, color: "#fff", marginBottom: 8 }}>{portal.role}</h3>

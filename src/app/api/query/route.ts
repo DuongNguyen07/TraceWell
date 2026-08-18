@@ -1,6 +1,5 @@
-// Answers a staff member's natural-language question about a specific
-// patient, using ONLY that patient's actual notes and profile as context —
-// never the AI's general knowledge, and never another patient's data.
+
+
 
 import { NextRequest, NextResponse } from "next/server";
 
@@ -69,10 +68,10 @@ export async function POST(request: NextRequest) {
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`;
 
-    // The instruction is deliberately strict about staying inside the
-    // provided notes/profile. This matters clinically: an AI assistant that
-    // confidently answers from general knowledge instead of admitting "the
-    // notes don't say" would be actively dangerous in a care context.
+    
+    
+    
+    
     const requestBody = {
       contents: [
         {

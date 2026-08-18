@@ -3,7 +3,7 @@
 import { useState } from "react";
 import HealthChart from "./HealthChart";
 
-// ---------- Inline types (mirror the DashboardView contract exactly) ----------
+
 
 type Baseline = { mood: number; appetite: number; mobility: number; sleep: number };
 type WellbeingEntry = Baseline & { timestamp: number };
@@ -49,10 +49,10 @@ type ChatMessage = {
   timestamp: number;
 };
 
-// ---------- Inline helpers ----------
+
 
 function isClinicalNote(authorRole: string): boolean {
-  // Matches "Nurse", "Doctor", "Carer" with or without a name prefix like "Emily (Nurse)"
+  
   return /\b(Nurse|Carer|Doctor)\b/.test(authorRole);
 }
 
@@ -84,9 +84,7 @@ function groupNotesByDay(notes: CareNote[]): DayGroup[] {
   return Array.from(groups.values());
 }
 
-// ================================================================
-// COMPONENT
-// ================================================================
+
 
 export default function FamilyResidentView({
   patient,
@@ -98,6 +96,7 @@ export default function FamilyResidentView({
   currentUserRole,
   onSendChatMessage,
   showChat = true,
+  lastClinicalActivity,
 }: {
   patient: Patient;
   personLabelSingular: string;
@@ -108,9 +107,25 @@ export default function FamilyResidentView({
   currentUserRole: string;
   onSendChatMessage: (content: string) => void;
   showChat?: boolean;
+  lastClinicalActivity?: { authorRole: string; timestamp: number };
 }) {
-  const lastVisit = visibleNotes.find((n) => isClinicalNote(n.authorRole));
-  const dayGroups = groupNotesByDay(visibleNotes);
+  
+  const noteLastVisit = visibleNotes
+    .filter((n) => isClinicalNote(n.authorRole))
+    .sort((a, b) => b.timestamp - a.timestamp)[0];
+  const lastVisit: { authorRole: string; timestamp: number; content?: string } | null = (() => {
+    const fromNote = noteLastVisit
+      ? { authorRole: noteLastVisit.authorRole, timestamp: noteLastVisit.timestamp, content: noteLastVisit.content }
+      : null;
+    if (!fromNote && !lastClinicalActivity) return null;
+    if (!fromNote) return { ...lastClinicalActivity!, content: undefined };
+    if (!lastClinicalActivity) return fromNote;
+    return lastClinicalActivity.timestamp > fromNote.timestamp
+      ? { ...lastClinicalActivity, content: undefined }
+      : fromNote;
+  })();
+  const familyUpdateNotes = visibleNotes.filter((n) => n.type === "family_update");
+  const dayGroups = groupNotesByDay(familyUpdateNotes);
   const healthInfo = patient.healthInfo ?? DEFAULT_HEALTH_INFO;
 
   const [chatDraft, setChatDraft] = useState("");
@@ -136,7 +151,9 @@ export default function FamilyResidentView({
             <div className="text-sm font-semibold text-ink">
               Last visit: {lastVisit.authorRole} · {timeAgo(lastVisit.timestamp)}
             </div>
-            <div className="mt-1 text-sm text-ink-soft">{lastVisit.content}</div>
+            {lastVisit.content && (
+              <div className="mt-1 text-sm text-ink-soft">{lastVisit.content}</div>
+            )}
           </div>
         </div>
       ) : (
@@ -191,15 +208,14 @@ export default function FamilyResidentView({
       </div>
 
       <div className="mt-6 rounded-xl border border-border bg-background p-4">
-        <span className="text-sm font-semibold text-ink">Daily activity summary</span>
+        <span className="text-sm font-semibold text-ink">Updates from care team</span>
         <p className="mt-1 mb-3 text-xs text-ink-soft">
-          A day-by-day summary for {patient.name}. Clinical details are kept out of this
-          view — for full clinical history, speak with the care team.
+          Messages sent to you by the care team about {patient.name}. For detailed clinical information, speak with staff directly.
         </p>
         <div className="flex flex-col gap-4">
           {dayGroups.length === 0 ? (
             <p className="text-sm text-ink-soft">
-              No activity has been recorded for this {personLabelSingular} yet.
+              No family updates have been sent yet. The care team will post messages here when there&apos;s news to share.
             </p>
           ) : (
             dayGroups.map((day) => (
@@ -212,23 +228,11 @@ export default function FamilyResidentView({
                 </div>
                 <div className="flex flex-col gap-2">
                   {day.notes.map((note) => (
-                    <div key={note.id} className="border-l-2 border-teal pl-3">
+                    <div key={note.id} className="border-l-2 border-amber-400 pl-3">
                       <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <span className={isClinicalNote(note.authorRole) ? "font-medium text-teal" : ""}>
-                          {note.authorRole}
-                        </span>
+                        <span className="font-medium text-amber-700">{note.authorRole}</span>
                         <span>· {timeAgo(note.timestamp)}</span>
-                        {note.type === "image" && <span>· 📷 Photo</span>}
-                        {note.type === "voice" && <span>· 🎙️ Voice note</span>}
                       </div>
-                      {note.imageUrl && (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={note.imageUrl}
-                          alt="Care note attachment"
-                          className="mt-1 max-h-40 rounded-lg border border-border object-cover"
-                        />
-                      )}
                       <div className="mt-0.5 text-sm text-ink">{note.content}</div>
                     </div>
                   ))}

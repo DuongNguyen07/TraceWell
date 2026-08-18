@@ -1,10 +1,9 @@
-// Returns all clinical data for an org.
-// Primary source: PostgreSQL (via Prisma).
-// Fallback: server-side in-memory hot cache (populated by broadcasts during the
-// current server process) — used when the DB is unreachable or the migration
-// has not yet been applied.
+
+
 
 import { NextRequest, NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { getOrgData } from "@/lib/data-store";
 import { prisma } from "@/lib/prisma";
 
@@ -13,6 +12,14 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   const org = new URL(req.url).searchParams.get("org");
   if (!org) return NextResponse.json({ error: "Missing org" }, { status: 400 });
+
+  
+  const session = await getServerSession(authOptions);
+  const userOrg  = (session?.user as { org?: string } | undefined)?.org;
+  const userRole = (session?.user as { role?: string } | undefined)?.role;
+  if (session && userRole !== "ADMIN" && userOrg && userOrg !== org) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   const inMemory = getOrgData(org);
 
@@ -117,7 +124,7 @@ export async function GET(req: NextRequest) {
       dbDiagnoses[pid] = items.map((d) => ({
         id:         d.id,
         condition:  d.condition,
-        // Convert "ACTIVE" → "Active", "CHRONIC" → "Chronic", etc.
+        
         status:     d.status.charAt(0) + d.status.slice(1).toLowerCase(),
         notes:      d.notes ?? "",
         authorRole: d.authorRole,
@@ -125,9 +132,9 @@ export async function GET(req: NextRequest) {
       }));
     }
 
-    // Merge DB data with the in-memory hot cache. DB data is base;
-    // in-memory carries items broadcast since the last server restart
-    // that may not have been persisted yet.
+    
+    
+    
     function mergeInto(
       base: Record<string, unknown[]>,
       extra: Record<string, unknown[]>,
@@ -155,8 +162,8 @@ export async function GET(req: NextRequest) {
     });
 
   } catch {
-    // DB unavailable or migration not yet run — serve in-memory data so the
-    // app keeps working during setup.
+    
+    
     return NextResponse.json(inMemory);
   }
 }

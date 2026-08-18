@@ -1,7 +1,5 @@
-// Server-side in-memory store for all live session data per org.
-// Mirrors the localStorage shape so clients can bootstrap from here on first load.
-// Uses a Node.js global so the Map survives Next.js route-handler hot reloads.
-// For a multi-instance deployment, swap this for Redis or Supabase.
+
+
 
 export type OrgData = {
   notes:      Record<string, unknown[]>;

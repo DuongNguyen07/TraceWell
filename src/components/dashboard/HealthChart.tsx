@@ -40,33 +40,15 @@ function formatDateTime(ts: number) {
   });
 }
 
-function aggregate(entries: WellbeingEntry[], gran: Granularity): WellbeingEntry[] {
-  if (gran === "daily") return [...entries].sort((a, b) => a.timestamp - b.timestamp);
-  const buckets = new Map<string, WellbeingEntry[]>();
-  for (const e of entries) {
-    const d = new Date(e.timestamp);
-    const key = gran === "weekly"
-      ? weekStart(d).toISOString().slice(0, 10)
-      : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    if (!buckets.has(key)) buckets.set(key, []);
-    buckets.get(key)!.push(e);
+function filterWindow(entries: WellbeingEntry[], gran: Granularity, offset: number): {
+  entries: WellbeingEntry[];
+  periodStart: number;
+  periodEnd: number;
+} {
+  const sorted = [...entries].sort((a, b) => a.timestamp - b.timestamp);
+  if (gran === "daily") {
+    return { entries: sorted, periodStart: 0, periodEnd: 0 };
   }
-  return [...buckets.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([, group]) => {
-      const n = group.length;
-      return {
-        mood:      Math.round(group.reduce((s, e) => s + e.mood,      0) / n * 10) / 10,
-        appetite:  Math.round(group.reduce((s, e) => s + e.appetite,  0) / n * 10) / 10,
-        mobility:  Math.round(group.reduce((s, e) => s + e.mobility,  0) / n * 10) / 10,
-        sleep:     Math.round(group.reduce((s, e) => s + e.sleep,     0) / n * 10) / 10,
-        timestamp: Math.max(...group.map((e) => e.timestamp)),
-      };
-    });
-}
-
-function filterWindow(entries: WellbeingEntry[], gran: Granularity, offset: number): WellbeingEntry[] {
-  if (gran === "daily") return entries;
   const now = new Date();
   let start: Date, end: Date;
   if (gran === "weekly") {
@@ -78,7 +60,11 @@ function filterWindow(entries: WellbeingEntry[], gran: Granularity, offset: numb
     start = new Date(now.getFullYear(), now.getMonth() - offset, 1);
     end   = new Date(start.getFullYear(), start.getMonth() + 1, 1);
   }
-  return entries.filter((e) => e.timestamp >= start.getTime() && e.timestamp < end.getTime());
+  return {
+    entries: sorted.filter((e) => e.timestamp >= start.getTime() && e.timestamp < end.getTime()),
+    periodStart: start.getTime(),
+    periodEnd: end.getTime(),
+  };
 }
 
 function periodLabel(gran: Granularity, offset: number): string {
@@ -102,11 +88,13 @@ type ChartLine = {
 
 type TooltipState = { mouseX: number; mouseY: number; entry: WellbeingEntry } | null;
 
-function LineChart({ entries, lines, height, hidden }: {
+function LineChart({ entries, lines, height, hidden, periodStart, periodEnd }: {
   entries: WellbeingEntry[];
   lines: ChartLine[];
   height: number;
   hidden?: Set<string>;
+  periodStart?: number;
+  periodEnd?: number;
 }) {
   const [tooltip, setTooltip] = useState<TooltipState>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -121,11 +109,32 @@ function LineChart({ entries, lines, height, hidden }: {
 
   const plotW = W - PL - PR;
   const plotH = height - PT - PB;
-  const xFor = (i: number) =>
-    entries.length === 1 ? PL + plotW / 2 : PL + (i / (entries.length - 1)) * plotW;
+
+  
+  
+  const usePeriodBounds = periodStart !== undefined && periodEnd !== undefined && periodEnd > periodStart;
+  const xFor = usePeriodBounds
+    ? (ts: number) => PL + ((ts - periodStart!) / (periodEnd! - periodStart!)) * plotW
+    : (_ts: number, i: number) => entries.length === 1 ? PL + plotW / 2 : PL + (i / (entries.length - 1)) * plotW;
+
   const yFor = (v: number) => PT + plotH - (v / 10) * plotH;
   const step = Math.max(1, Math.ceil(entries.length / 6));
   const visible = hidden ? lines.filter((l) => !hidden.has(l.key)) : lines;
+
+  
+  const xTicks: { label: string; x: number }[] = usePeriodBounds
+    ? (() => {
+        
+        const span = periodEnd! - periodStart!;
+        const tickCount = 5;
+        return Array.from({ length: tickCount }, (_, i) => {
+          const ts = periodStart! + (span / (tickCount - 1)) * i;
+          return { label: formatShortDate(ts), x: PL + ((ts - periodStart!) / span) * plotW };
+        });
+      })()
+    : entries
+        .map((e, i) => i % step === 0 ? { label: formatShortDate(e.timestamp), x: xFor(e.timestamp, i) } : null)
+        .filter((t): t is { label: string; x: number } => t !== null);
 
   return (
     <div ref={containerRef} className="relative">
@@ -140,15 +149,22 @@ function LineChart({ entries, lines, height, hidden }: {
             <text x={4} y={yFor(v) + 4} fontSize={9} fill="var(--color-muted-foreground)">{v}</text>
           </g>
         ))}
-        {entries.map((entry, i) =>
-          i % step === 0 ? (
-            <text key={entry.timestamp} x={xFor(i)} y={height - 8} fontSize={8} textAnchor="middle" fill="var(--color-muted-foreground)">
-              {formatShortDate(entry.timestamp)}
-            </text>
-          ) : null
+        {xTicks.map(({ label, x }) => (
+          <text key={label + x} x={x} y={height - 8} fontSize={8} textAnchor="middle" fill="var(--color-muted-foreground)">
+            {label}
+          </text>
+        ))}
+
+        
+        {usePeriodBounds && (
+          <>
+            <line x1={PL} x2={PL} y1={PT} y2={height - PB} stroke="var(--color-border)" strokeWidth={1} strokeDasharray="3 3" />
+            <line x1={W - PR} x2={W - PR} y1={PT} y2={height - PB} stroke="var(--color-border)" strokeWidth={1} strokeDasharray="3 3" />
+          </>
         )}
+
         {visible.map((line) => {
-          const pts = entries.map((e, i) => `${xFor(i)},${yFor(line.getValue(e))}`).join(" ");
+          const pts = entries.map((e, i) => `${xFor(e.timestamp, i)},${yFor(line.getValue(e))}`).join(" ");
           return (
             <g key={line.key}>
               {line.baselineVal !== undefined && (
@@ -159,7 +175,7 @@ function LineChart({ entries, lines, height, hidden }: {
               {entries.map((e, i) => (
                 <circle
                   key={`${line.key}-${e.timestamp}`}
-                  cx={xFor(i)} cy={yFor(line.getValue(e))} r={4}
+                  cx={xFor(e.timestamp, i)} cy={yFor(line.getValue(e))} r={4}
                   fill={line.color} stroke="white" strokeWidth={1.5}
                   className="cursor-pointer"
                   onMouseEnter={(evt) => {
@@ -213,8 +229,10 @@ export default function HealthChart({ history, baseline }: { history: WellbeingE
   const [hidden, setHidden] = useState<Set<string>>(new Set());
 
   const baselineOverall = (baseline.mood + baseline.appetite + baseline.mobility + baseline.sleep) / 4;
-  const windowed   = useMemo(() => filterWindow(history, gran, offset), [history, gran, offset]);
-  const aggregated = useMemo(() => aggregate(windowed, gran),           [windowed, gran]);
+  const { entries: windowed, periodStart, periodEnd } = useMemo(
+    () => filterWindow(history, gran, offset),
+    [history, gran, offset]
+  );
 
   const overallLines: ChartLine[] = [
     { key: "overall", label: "Overall", color: "#64748b", getValue: overall, baselineVal: baselineOverall },
@@ -232,9 +250,11 @@ export default function HealthChart({ history, baseline }: { history: WellbeingE
     );
   }
 
+  const bounds = gran !== "daily" ? { periodStart, periodEnd } : {};
+
   return (
     <div className="flex flex-col gap-5">
-      {/* Controls: granularity + period navigator */}
+      
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex gap-1 rounded-full bg-secondary p-1">
           {(["daily", "weekly", "monthly"] as Granularity[]).map((g) => (
@@ -260,7 +280,7 @@ export default function HealthChart({ history, baseline }: { history: WellbeingE
         )}
       </div>
 
-      {/* Chart 1: Overall Health Matrix */}
+      
       <div>
         <div className="mb-1.5 flex items-center justify-between">
           <div className="flex items-center gap-1.5">
@@ -269,13 +289,13 @@ export default function HealthChart({ history, baseline }: { history: WellbeingE
           </div>
           <span className="text-[10px] text-muted-foreground">baseline {baselineOverall.toFixed(1)}/10</span>
         </div>
-        <LineChart entries={aggregated} lines={overallLines} height={H_OVERALL} />
+        <LineChart entries={windowed} lines={overallLines} height={H_OVERALL} {...bounds} />
       </div>
 
-      {/* Chart 2: Specified Health Matrix */}
+      
       <div>
         <div className="mb-1.5"><span className="text-xs font-semibold text-ink">Specified Health Matrix</span></div>
-        <LineChart entries={aggregated} lines={detailLines} height={H_DETAIL} hidden={hidden} />
+        <LineChart entries={windowed} lines={detailLines} height={H_DETAIL} hidden={hidden} {...bounds} />
         <div className="mt-2 flex flex-wrap gap-2">
           {DETAIL_METRICS.map((m) => (
             <button key={m.key}

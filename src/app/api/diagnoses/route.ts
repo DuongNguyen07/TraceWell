@@ -1,6 +1,5 @@
-// Persists a new diagnosis to the DB. Called from DashboardView when a
-// clinician adds an entry to the problem list. Diagnoses are clinical-staff-
-// only data and don't require real-time broadcast.
+
+
 
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
@@ -45,7 +44,7 @@ export async function POST(req: NextRequest) {
     });
     return NextResponse.json({ ok: true });
   } catch (err) {
-    // Don't fail the UI if the DB write fails (e.g. invalid patientProfileId FK).
+    
     if (process.env.NODE_ENV === "development") {
       console.debug("[api/diagnoses] DB write skipped:", (err as Error).message.slice(0, 120));
     }

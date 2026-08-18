@@ -1,21 +1,18 @@
-// Reads an uploaded photo using Gemini's vision capability and returns a
-// factual, brief caption for the care record. Separate route from
-// /api/handover since captioning happens the moment a photo is added to a
-// note — a different trigger, at a different time.
+
+
 
 import { NextRequest, NextResponse } from "next/server";
 
 type CaptionRequest = {
-  imageBase64: string; // just the raw base64 data — no "data:image/...;base64," prefix
-  mimeType: string;    // e.g. "image/jpeg", "image/png"
+  imageBase64: string; 
+  mimeType: string;    
 };
 
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// Same retry wrapper as the handover route — see its comments for full
-// explanation of the retry logic.
+
 async function callGeminiWithRetry(
   url: string,
   requestBody: object,
@@ -61,9 +58,9 @@ export async function POST(request: NextRequest) {
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
 
-    // A vision request's "parts" array can include an inline_data object
-    // (the image itself) alongside a text instruction, unlike the text-only
-    // requests in the other two routes.
+    
+    
+    
     const requestBody = {
       contents: [
         {

@@ -28,22 +28,22 @@ function vary(base: number, spread = 2) { return clamp(base + (Math.random() - 0
 
 const HOSPITAL_STAFF = [
   // AM shift nurses (7 am – 3 pm)
-  { name: "Sarah Jones",        email: "sarah.jones@stpetershospital.com",     password: "nurse123",   role: "NURSE"   as Role, org: "hospital" },
-  { name: "James Kowalski",     email: "j.kowalski@stpetershospital.com",      password: "nurse123",   role: "NURSE"   as Role, org: "hospital" },
-  { name: "Emma Davies",        email: "e.davies@stpetershospital.com",        password: "nurse123",   role: "NURSE"   as Role, org: "hospital" },
+  { name: "Sarah Jones",        email: "sarah.jones@stpetershospital.com",     password: "nurse123",   role: "NURSE"   as Role, org: "hospital", hapId: "HAP-0001" },
+  { name: "James Kowalski",     email: "j.kowalski@stpetershospital.com",      password: "nurse123",   role: "NURSE"   as Role, org: "hospital", hapId: "HAP-0002" },
+  { name: "Emma Davies",        email: "e.davies@stpetershospital.com",        password: "nurse123",   role: "NURSE"   as Role, org: "hospital", hapId: "HAP-0003" },
   // PM shift nurses (3 pm – 11 pm)
-  { name: "Aisha Okonkwo",      email: "a.okonkwo@stpetershospital.com",       password: "nurse123",   role: "NURSE"   as Role, org: "hospital" },
-  { name: "Rebecca Torres",     email: "r.torres@stpetershospital.com",        password: "nurse123",   role: "NURSE"   as Role, org: "hospital" },
-  { name: "Daniel Park",        email: "d.park@stpetershospital.com",          password: "nurse123",   role: "NURSE"   as Role, org: "hospital" },
+  { name: "Aisha Okonkwo",      email: "a.okonkwo@stpetershospital.com",       password: "nurse123",   role: "NURSE"   as Role, org: "hospital", hapId: "HAP-0004" },
+  { name: "Rebecca Torres",     email: "r.torres@stpetershospital.com",        password: "nurse123",   role: "NURSE"   as Role, org: "hospital", hapId: "HAP-0005" },
+  { name: "Daniel Park",        email: "d.park@stpetershospital.com",          password: "nurse123",   role: "NURSE"   as Role, org: "hospital", hapId: "HAP-0006" },
   // Night shift nurses (11 pm – 7 am)
-  { name: "Kevin Murphy",       email: "k.murphy@stpetershospital.com",        password: "nurse123",   role: "NURSE"   as Role, org: "hospital" },
-  { name: "Nina Walsh",         email: "n.walsh@stpetershospital.com",         password: "nurse123",   role: "NURSE"   as Role, org: "hospital" },
+  { name: "Kevin Murphy",       email: "k.murphy@stpetershospital.com",        password: "nurse123",   role: "NURSE"   as Role, org: "hospital", hapId: "HAP-0007" },
+  { name: "Nina Walsh",         email: "n.walsh@stpetershospital.com",         password: "nurse123",   role: "NURSE"   as Role, org: "hospital", hapId: "HAP-0008" },
   // Doctors
-  { name: "Dr. Michael Chen",   email: "dr.chen@stpetershospital.com",         password: "doctor123",  role: "DOCTOR"  as Role, org: "hospital" },
-  { name: "Dr. Fatima Malik",   email: "dr.malik@stpetershospital.com",        password: "doctor123",  role: "DOCTOR"  as Role, org: "hospital" },
-  { name: "Dr. Raj Sundaram",   email: "dr.sundaram@stpetershospital.com",     password: "doctor123",  role: "DOCTOR"  as Role, org: "hospital" },
-  { name: "Dr. Emma Lawson",    email: "dr.lawson@stpetershospital.com",       password: "doctor123",  role: "DOCTOR"  as Role, org: "hospital" },
-  { name: "Patricia Walsh",     email: "p.walsh@stpetershospital.com",         password: "manager123", role: "MANAGER" as Role, org: "hospital" },
+  { name: "Dr. Michael Chen",   email: "dr.chen@stpetershospital.com",         password: "doctor123",  role: "DOCTOR"  as Role, org: "hospital", hapId: "HAP-0009" },
+  { name: "Dr. Fatima Malik",   email: "dr.malik@stpetershospital.com",        password: "doctor123",  role: "DOCTOR"  as Role, org: "hospital", hapId: "HAP-0010" },
+  { name: "Dr. Raj Sundaram",   email: "dr.sundaram@stpetershospital.com",     password: "doctor123",  role: "DOCTOR"  as Role, org: "hospital", hapId: "HAP-0011" },
+  { name: "Dr. Emma Lawson",    email: "dr.lawson@stpetershospital.com",       password: "doctor123",  role: "DOCTOR"  as Role, org: "hospital", hapId: "HAP-0012" },
+  { name: "Patricia Walsh",     email: "p.walsh@stpetershospital.com",         password: "manager123", role: "MANAGER" as Role, org: "hospital", hapId: "HAP-0013" },
 ];
 
 const HOSPITAL_PATIENTS = [
@@ -102,6 +102,28 @@ const HOSPITAL_PATIENTS = [
       diagnoses: [{ condition: "Heart failure (HFrEF)", status: "CHRONIC" as DiagnosisStatus }, { condition: "Chronic kidney disease stage 3", status: "CHRONIC" as DiagnosisStatus }],
     },
   },
+  {
+    user: { name: "Marcus Lee",     email: "m.lee@stpetershospital.com",         password: "patient123", role: "PATIENT" as Role, org: "hospital" },
+    profile: {
+      dateOfBirth: dob(1980, 4, 14), ward: "Ward 2A",
+      allergies: ["Sulfa drugs"],
+      baseline: { mood: 7, appetite: 8, mobility: 8, sleep: 7 },
+      profileData: { preferences: "Keeps active; likes watching sport on TV.", routine: "Morning shower independently; reads before sleep.", communicationStyle: "Prefers concise updates — gets anxious with too much medical jargon." },
+      medications: [{ name: "Clopidogrel", dose: "75 mg", frequency: "Once daily" }, { name: "Atorvastatin", dose: "80 mg", frequency: "Once nightly" }],
+      diagnoses: [{ condition: "NSTEMI (acute coronary syndrome)", status: "ACTIVE" as DiagnosisStatus }, { condition: "Hypercholesterolaemia", status: "CHRONIC" as DiagnosisStatus }],
+    },
+  },
+  {
+    user: { name: "Sofia Russo",    email: "s.russo@stpetershospital.com",        password: "patient123", role: "PATIENT" as Role, org: "hospital" },
+    profile: {
+      dateOfBirth: dob(1962, 9, 30), ward: "Ward 5C",
+      allergies: ["Morphine"],
+      baseline: { mood: 6, appetite: 6, mobility: 5, sleep: 6 },
+      profileData: { preferences: "Enjoys herbal tea; prefers lights dim in the evening.", routine: "Takes short walks in the corridor before lunch.", communicationStyle: "Italian is first language; English is good but prefers written notes for complex info." },
+      medications: [{ name: "Methotrexate", dose: "15 mg", frequency: "Once weekly" }, { name: "Folic acid", dose: "5 mg", frequency: "Once daily, 6 days per week" }, { name: "Hydroxychloroquine", dose: "200 mg", frequency: "Twice daily" }],
+      diagnoses: [{ condition: "Rheumatoid arthritis (flare)", status: "ACTIVE" as DiagnosisStatus }, { condition: "Anaemia of chronic disease", status: "CHRONIC" as DiagnosisStatus }],
+    },
+  },
 ];
 
 const HOSPITAL_FAMILY = [
@@ -109,31 +131,34 @@ const HOSPITAL_FAMILY = [
   { user: { name: "Kofi Osei",    email: "kofi.osei@gmail.com",       password: "family123", role: "FAMILY_MEMBER" as Role, org: "hospital" }, linkedPatientEmail: "david.osei@stpetershospital.com",  relationship: "brother"  },
   { user: { name: "Ananya Singh", email: "ananya.singh@gmail.com",    password: "family123", role: "FAMILY_MEMBER" as Role, org: "hospital" }, linkedPatientEmail: "priya.singh@stpetershospital.com", relationship: "daughter" },
   { user: { name: "Claire Burke", email: "claire.burke@gmail.com",    password: "family123", role: "FAMILY_MEMBER" as Role, org: "hospital" }, linkedPatientEmail: "t.burke@stpetershospital.com",     relationship: "spouse"   },
+  { user: { name: "Jenny Park",   email: "jenny.park@gmail.com",      password: "family123", role: "FAMILY_MEMBER" as Role, org: "hospital" }, linkedPatientEmail: "h.park@stpetershospital.com",      relationship: "daughter" },
+  { user: { name: "Amy Lee",      email: "amy.lee@gmail.com",          password: "family123", role: "FAMILY_MEMBER" as Role, org: "hospital" }, linkedPatientEmail: "m.lee@stpetershospital.com",       relationship: "spouse"   },
+  { user: { name: "Marco Russo",  email: "marco.russo@gmail.com",     password: "family123", role: "FAMILY_MEMBER" as Role, org: "hospital" }, linkedPatientEmail: "s.russo@stpetershospital.com",     relationship: "spouse"   },
 ];
 
 // ─── Aged Care staff ───────────────────────────────────────────────────────────
 
 const AGED_CARE_STAFF = [
   // AM shift nurses (7 am – 3 pm)
-  { name: "Mary Nguyen",        email: "mary.nguyen@sunriseagedcare.com.au",    password: "nurse123",   role: "NURSE"   as Role, org: "agedcare" },
-  { name: "Fiona Brennan",      email: "f.brennan@sunriseagedcare.com.au",      password: "nurse123",   role: "NURSE"   as Role, org: "agedcare" },
+  { name: "Mary Nguyen",        email: "mary.nguyen@sunriseagedcare.com.au",    password: "nurse123",   role: "NURSE"   as Role, org: "agedcare", hapId: "HAP-0014" },
+  { name: "Fiona Brennan",      email: "f.brennan@sunriseagedcare.com.au",      password: "nurse123",   role: "NURSE"   as Role, org: "agedcare", hapId: "HAP-0015" },
   // PM shift nurses (3 pm – 11 pm)
-  { name: "Tom Bradley",        email: "t.bradley@sunriseagedcare.com.au",      password: "nurse123",   role: "NURSE"   as Role, org: "agedcare" },
-  { name: "Priya Sharma",       email: "p.sharma@sunriseagedcare.com.au",       password: "nurse123",   role: "NURSE"   as Role, org: "agedcare" },
+  { name: "Tom Bradley",        email: "t.bradley@sunriseagedcare.com.au",      password: "nurse123",   role: "NURSE"   as Role, org: "agedcare", hapId: "HAP-0016" },
+  { name: "Priya Sharma",       email: "p.sharma@sunriseagedcare.com.au",       password: "nurse123",   role: "NURSE"   as Role, org: "agedcare", hapId: "HAP-0017" },
   // Night shift nurse
-  { name: "Chen Wei",           email: "c.wei@sunriseagedcare.com.au",          password: "nurse123",   role: "NURSE"   as Role, org: "agedcare" },
+  { name: "Chen Wei",           email: "c.wei@sunriseagedcare.com.au",          password: "nurse123",   role: "NURSE"   as Role, org: "agedcare", hapId: "HAP-0018" },
   // AM carers
-  { name: "Linda Santos",       email: "l.santos@sunriseagedcare.com.au",       password: "carer123",   role: "CARER"   as Role, org: "agedcare" },
-  { name: "Judy Kim",           email: "j.kim@sunriseagedcare.com.au",          password: "carer123",   role: "CARER"   as Role, org: "agedcare" },
+  { name: "Linda Santos",       email: "l.santos@sunriseagedcare.com.au",       password: "carer123",   role: "CARER"   as Role, org: "agedcare", hapId: "HAP-0019" },
+  { name: "Judy Kim",           email: "j.kim@sunriseagedcare.com.au",          password: "carer123",   role: "CARER"   as Role, org: "agedcare", hapId: "HAP-0020" },
   // PM carers
-  { name: "Marcus Webb",        email: "m.webb@sunriseagedcare.com.au",         password: "carer123",   role: "CARER"   as Role, org: "agedcare" },
-  { name: "Rosa Delgado",       email: "r.delgado@sunriseagedcare.com.au",      password: "carer123",   role: "CARER"   as Role, org: "agedcare" },
+  { name: "Marcus Webb",        email: "m.webb@sunriseagedcare.com.au",         password: "carer123",   role: "CARER"   as Role, org: "agedcare", hapId: "HAP-0021" },
+  { name: "Rosa Delgado",       email: "r.delgado@sunriseagedcare.com.au",      password: "carer123",   role: "CARER"   as Role, org: "agedcare", hapId: "HAP-0022" },
   // Night carer
-  { name: "Ahmed Hassan",       email: "a.hassan@sunriseagedcare.com.au",       password: "carer123",   role: "CARER"   as Role, org: "agedcare" },
+  { name: "Ahmed Hassan",       email: "a.hassan@sunriseagedcare.com.au",       password: "carer123",   role: "CARER"   as Role, org: "agedcare", hapId: "HAP-0023" },
   // Doctors
-  { name: "Dr. Anita Patel",    email: "dr.patel@sunriseagedcare.com.au",       password: "doctor123",  role: "DOCTOR"  as Role, org: "agedcare" },
-  { name: "Dr. Samuel Obi",     email: "dr.obi@sunriseagedcare.com.au",         password: "doctor123",  role: "DOCTOR"  as Role, org: "agedcare" },
-  { name: "James Wilson",       email: "j.wilson@sunriseagedcare.com.au",       password: "manager123", role: "MANAGER" as Role, org: "agedcare" },
+  { name: "Dr. Anita Patel",    email: "dr.patel@sunriseagedcare.com.au",       password: "doctor123",  role: "DOCTOR"  as Role, org: "agedcare", hapId: "HAP-0024" },
+  { name: "Dr. Samuel Obi",     email: "dr.obi@sunriseagedcare.com.au",         password: "doctor123",  role: "DOCTOR"  as Role, org: "agedcare", hapId: "HAP-0025" },
+  { name: "James Wilson",       email: "j.wilson@sunriseagedcare.com.au",       password: "manager123", role: "MANAGER" as Role, org: "agedcare", hapId: "HAP-0026" },
 ];
 
 const AGED_CARE_PATIENTS = [
@@ -192,13 +217,38 @@ const AGED_CARE_PATIENTS = [
       diagnoses: [{ condition: "Rheumatoid arthritis", status: "CHRONIC" as DiagnosisStatus }, { condition: "Osteoporosis", status: "CHRONIC" as DiagnosisStatus }, { condition: "Insomnia", status: "ACTIVE" as DiagnosisStatus }],
     },
   },
+  {
+    user: { name: "June Fitzgerald", email: "june.fitzgerald@sunriseagedcare.com.au", password: "patient123", role: "PATIENT" as Role, org: "agedcare" },
+    profile: {
+      dateOfBirth: dob(1937, 4, 16), ward: "Room 05A",
+      allergies: ["Codeine"],
+      baseline: { mood: 7, appetite: 7, mobility: 5, sleep: 6 },
+      profileData: { preferences: "Fond of puzzles and old films; enjoys chatting with visitors.", routine: "Listens to the radio after breakfast; likes lights off by 9 pm.", communicationStyle: "Candid and warm; responds well to reassurance." },
+      medications: [{ name: "Gabapentin", dose: "300 mg", frequency: "Three times daily" }, { name: "Paracetamol", dose: "1 g", frequency: "Four times daily as needed" }],
+      diagnoses: [{ condition: "Chronic neuropathic pain", status: "CHRONIC" as DiagnosisStatus }, { condition: "Mild depression", status: "ACTIVE" as DiagnosisStatus }],
+    },
+  },
+  {
+    user: { name: "Henry Thompson",  email: "henry.thompson@sunriseagedcare.com.au", password: "patient123", role: "PATIENT" as Role, org: "agedcare" },
+    profile: {
+      dateOfBirth: dob(1945, 12, 3), ward: "Room 09C",
+      allergies: [],
+      baseline: { mood: 6, appetite: 7, mobility: 6, sleep: 7 },
+      profileData: { preferences: "Ex-navy; values punctuality and a firm handshake.", routine: "Insists on making his bed; dresses fully before breakfast.", communicationStyle: "Straight-talker; dislikes being talked around. Gets agitated if not told the truth." },
+      medications: [{ name: "Ramipril", dose: "5 mg", frequency: "Once daily" }, { name: "Bisoprolol", dose: "2.5 mg", frequency: "Once daily" }, { name: "Aspirin", dose: "100 mg", frequency: "Once daily" }],
+      diagnoses: [{ condition: "Hypertension", status: "CHRONIC" as DiagnosisStatus }, { condition: "COPD (mild)", status: "CHRONIC" as DiagnosisStatus }],
+    },
+  },
 ];
 
 const AGED_CARE_FAMILY = [
   { user: { name: "Tom Wu",       email: "tom.wu@gmail.com",          password: "family123", role: "FAMILY_MEMBER" as Role, org: "agedcare" }, linkedPatientEmail: "margaret.wu@sunriseagedcare.com.au",    relationship: "son"      },
   { user: { name: "Minh Nguyen",  email: "minh.nguyen@gmail.com",     password: "family123", role: "FAMILY_MEMBER" as Role, org: "agedcare" }, linkedPatientEmail: "robert.nguyen@sunriseagedcare.com.au",  relationship: "son"      },
   { user: { name: "Grace Reid",   email: "grace.reid@gmail.com",      password: "family123", role: "FAMILY_MEMBER" as Role, org: "agedcare" }, linkedPatientEmail: "arthur.reid@sunriseagedcare.com.au",    relationship: "daughter" },
-  { user: { name: "Paul Mason",   email: "paul.mason@gmail.com",      password: "family123", role: "FAMILY_MEMBER" as Role, org: "agedcare" }, linkedPatientEmail: "dorothy.mason@sunriseagedcare.com.au",  relationship: "spouse"   },
+  { user: { name: "Paul Mason",       email: "paul.mason@gmail.com",          password: "family123", role: "FAMILY_MEMBER" as Role, org: "agedcare" }, linkedPatientEmail: "dorothy.mason@sunriseagedcare.com.au",      relationship: "spouse"   },
+  { user: { name: "Claire Campbell",  email: "claire.campbell@gmail.com",    password: "family123", role: "FAMILY_MEMBER" as Role, org: "agedcare" }, linkedPatientEmail: "elsie.campbell@sunriseagedcare.com.au",     relationship: "granddaughter" },
+  { user: { name: "Sophie Fitzgerald",email: "sophie.fitzgerald@gmail.com",  password: "family123", role: "FAMILY_MEMBER" as Role, org: "agedcare" }, linkedPatientEmail: "june.fitzgerald@sunriseagedcare.com.au",    relationship: "daughter" },
+  { user: { name: "Laura Thompson",   email: "laura.thompson@gmail.com",     password: "family123", role: "FAMILY_MEMBER" as Role, org: "agedcare" }, linkedPatientEmail: "henry.thompson@sunriseagedcare.com.au",     relationship: "daughter" },
 ];
 
 // ─── Clinical data generators ──────────────────────────────────────────────────
@@ -273,12 +323,12 @@ function vitalsHistory(daysSpan: number): { systolic: number; diastolic: number;
 
 // ─── Upsert helper ────────────────────────────────────────────────────────────
 
-async function upsertUser(u: { name: string; email: string; password: string; role: Role; org: string }) {
+async function upsertUser(u: { name: string; email: string; password: string; role: Role; org: string; hapId?: string }) {
   const hashed = await hash(u.password);
   return prisma.user.upsert({
     where:  { email: u.email },
-    update: { name: u.name, role: u.role, org: u.org },
-    create: { name: u.name, email: u.email, password: hashed, role: u.role, org: u.org },
+    update: { name: u.name, role: u.role, org: u.org, ...(u.hapId ? { hapId: u.hapId } : {}) },
+    create: { name: u.name, email: u.email, password: hashed, role: u.role, org: u.org, ...(u.hapId ? { hapId: u.hapId } : {}) },
   });
 }
 
@@ -513,10 +563,15 @@ async function main() {
   console.log("    Patient:  priya.singh@stpetershospital.com    / patient123");
   console.log("    Patient:  t.burke@stpetershospital.com        / patient123");
   console.log("    Patient:  h.park@stpetershospital.com         / patient123");
-  console.log("    Family:   lena.chen@gmail.com                 / family123");
-  console.log("    Family:   kofi.osei@gmail.com                 / family123");
-  console.log("    Family:   ananya.singh@gmail.com              / family123");
-  console.log("    Family:   claire.burke@gmail.com              / family123");
+  console.log("    Patient:  m.lee@stpetershospital.com          / patient123");
+  console.log("    Patient:  s.russo@stpetershospital.com        / patient123");
+  console.log("    Family:   lena.chen@gmail.com                 / family123  (Amara Chen's daughter)");
+  console.log("    Family:   kofi.osei@gmail.com                 / family123  (David Osei's brother)");
+  console.log("    Family:   ananya.singh@gmail.com              / family123  (Priya Singh's daughter)");
+  console.log("    Family:   claire.burke@gmail.com              / family123  (Thomas Burke's spouse)");
+  console.log("    Family:   jenny.park@gmail.com                / family123  (Helen Park's daughter)");
+  console.log("    Family:   amy.lee@gmail.com                   / family123  (Marcus Lee's spouse)");
+  console.log("    Family:   marco.russo@gmail.com               / family123  (Sofia Russo's spouse)");
   console.log("");
   console.log("  🌅 Sunrise Aged Care  (org: agedcare)");
   console.log("    — AM nurses (7am–3pm) —");
@@ -544,10 +599,15 @@ async function main() {
   console.log("    Resident: elsie.campbell@sunriseagedcare.com.au / patient123");
   console.log("    Resident: arthur.reid@sunriseagedcare.com.au  / patient123");
   console.log("    Resident: dorothy.mason@sunriseagedcare.com.au / patient123");
-  console.log("    Family:   tom.wu@gmail.com                    / family123");
-  console.log("    Family:   minh.nguyen@gmail.com               / family123");
-  console.log("    Family:   grace.reid@gmail.com                / family123");
-  console.log("    Family:   paul.mason@gmail.com                / family123");
+  console.log("    Resident: june.fitzgerald@sunriseagedcare.com.au / patient123");
+  console.log("    Resident: henry.thompson@sunriseagedcare.com.au  / patient123");
+  console.log("    Family:   tom.wu@gmail.com                    / family123  (Margaret Wu's son)");
+  console.log("    Family:   minh.nguyen@gmail.com               / family123  (Robert Nguyen's son)");
+  console.log("    Family:   grace.reid@gmail.com                / family123  (Arthur Reid's daughter)");
+  console.log("    Family:   paul.mason@gmail.com                / family123  (Dorothy Mason's spouse)");
+  console.log("    Family:   claire.campbell@gmail.com           / family123  (Elsie Campbell's granddaughter)");
+  console.log("    Family:   sophie.fitzgerald@gmail.com         / family123  (June Fitzgerald's daughter)");
+  console.log("    Family:   laura.thompson@gmail.com            / family123  (Henry Thompson's daughter)");
   console.log("──────────────────────────────────────────────────────────────────────────");
 }
 

@@ -1,7 +1,5 @@
-// Returns all patients for an org (hospital | agedcare), scoped by role:
-//   FAMILY_MEMBER → only patients they are linked to via FamilyLink
-//   PATIENT       → only their own PatientProfile
-//   Everyone else → all patients in the requested org
+
+
 
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";

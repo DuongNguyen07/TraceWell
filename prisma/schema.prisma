@@ -59,6 +59,9 @@ model User {
   // relying purely on the login-form credential.
   org       String   @default("hospital")
   password  String
+  // Healthcare Access Point ID — unique per staff member, used in referral
+  // dropdowns to distinguish staff with the same display name.
+  hapId     String?  @unique
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

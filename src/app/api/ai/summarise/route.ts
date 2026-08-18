@@ -1,5 +1,5 @@
-// Summarises a set of care notes using an AI model.
-// Updated to use the CareNote model (previously NursingNote).
+
+
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'

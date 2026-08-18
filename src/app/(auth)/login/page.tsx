@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import type { Role } from "@prisma/client";
 
 type OrgType = "hospital" | "agedcare";
-type Stage = "org-select" | "login";
+type Stage = "org-select" | "login" | "change-password";
 
 const ROLE_PATHS: Record<Role, string> = {
   NURSE:         "/nurse",
@@ -22,12 +22,21 @@ const ROLE_PATHS: Record<Role, string> = {
 export default function LoginPage() {
   const router = useRouter();
 
-  const [stage, setStage]       = useState<Stage>("org-select");
-  const [orgType, setOrgType]   = useState<OrgType>("hospital");
-  const [email, setEmail]       = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError]       = useState("");
-  const [loading, setLoading]   = useState(false);
+  const [stage, setStage]               = useState<Stage>("org-select");
+  const [orgType, setOrgType]           = useState<OrgType>("hospital");
+  const [email, setEmail]               = useState("");
+  const [password, setPassword]         = useState("");
+  const [error, setError]               = useState("");
+  const [loading, setLoading]           = useState(false);
+
+  
+  const [cpEmail, setCpEmail]           = useState("");
+  const [cpCurrent, setCpCurrent]       = useState("");
+  const [cpNew, setCpNew]               = useState("");
+  const [cpConfirm, setCpConfirm]       = useState("");
+  const [cpError, setCpError]           = useState("");
+  const [cpSuccess, setCpSuccess]       = useState(false);
+  const [cpLoading, setCpLoading]       = useState(false);
 
   function selectOrg(type: OrgType) {
     setOrgType(type);
@@ -59,7 +68,39 @@ export default function LoginPage() {
     router.push(`${basePath}?org=${orgType}`);
   }
 
-  // ── Screen 1: organisation type ──────────────────────────────────
+  async function handleChangePassword() {
+    setCpError("");
+    if (!cpEmail || !cpCurrent || !cpNew || !cpConfirm) {
+      setCpError("All fields are required.");
+      return;
+    }
+    if (cpNew !== cpConfirm) {
+      setCpError("New passwords do not match.");
+      return;
+    }
+    if (cpNew.length < 8) {
+      setCpError("New password must be at least 8 characters.");
+      return;
+    }
+    setCpLoading(true);
+    try {
+      const res = await fetch("/api/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: cpEmail, currentPassword: cpCurrent, newPassword: cpNew }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setCpError((data as { error?: string }).error ?? "Failed to change password.");
+        return;
+      }
+      setCpSuccess(true);
+    } finally {
+      setCpLoading(false);
+    }
+  }
+
+  
   if (stage === "org-select") {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background p-6">
@@ -105,7 +146,80 @@ export default function LoginPage() {
     );
   }
 
-  // ── Screen 2: individual login ───────────────────────────────────
+  
+  if (stage === "change-password") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background p-6">
+        <div className="w-full max-w-md rounded-2xl border border-border bg-card p-8 shadow-soft">
+          <button onClick={() => { setStage("login"); setCpError(""); setCpSuccess(false); setCpEmail(""); setCpCurrent(""); setCpNew(""); setCpConfirm(""); }}
+            className="mb-4 text-sm text-ink-soft hover:text-ink">
+            ← Back
+          </button>
+          <div className="mb-4 flex items-center gap-2">
+            <Image src="/TraceWell_Logo_nobg.png" alt="TraceWell logo" width={28} height={28} className="h-7 w-7 object-contain" />
+            <span className="font-[var(--font-display)] text-lg text-ink">TraceWell</span>
+          </div>
+          <h1 className="text-2xl">Change password</h1>
+          <p className="mt-1 text-ink-soft">Enter your current password and choose a new one.</p>
+
+          {cpSuccess ? (
+            <div className="mt-6 rounded-xl bg-teal-soft p-4 text-sm text-teal">
+              Password updated successfully. You can now sign in with your new password.
+              <button onClick={() => { setStage("login"); setCpSuccess(false); }} className="mt-3 block text-xs underline hover:opacity-70">
+                Back to sign in
+              </button>
+            </div>
+          ) : (
+            <div className="mt-6 flex flex-col gap-3">
+              <input
+                value={cpEmail}
+                onChange={(e) => setCpEmail(e.target.value)}
+                type="email"
+                placeholder="Your email address"
+                autoComplete="email"
+                className="rounded-lg border border-border px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-ring"
+              />
+              <input
+                value={cpCurrent}
+                onChange={(e) => setCpCurrent(e.target.value)}
+                type="password"
+                placeholder="Current password"
+                autoComplete="current-password"
+                className="rounded-lg border border-border px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-ring"
+              />
+              <input
+                value={cpNew}
+                onChange={(e) => setCpNew(e.target.value)}
+                type="password"
+                placeholder="New password (min 8 characters)"
+                autoComplete="new-password"
+                className="rounded-lg border border-border px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-ring"
+              />
+              <input
+                value={cpConfirm}
+                onChange={(e) => setCpConfirm(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleChangePassword()}
+                type="password"
+                placeholder="Confirm new password"
+                autoComplete="new-password"
+                className="rounded-lg border border-border px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-ring"
+              />
+              {cpError && <p className="text-sm text-destructive">{cpError}</p>}
+              <button
+                onClick={handleChangePassword}
+                disabled={cpLoading}
+                className="rounded-full bg-primary py-2.5 text-sm font-medium text-primary-foreground disabled:opacity-50"
+              >
+                {cpLoading ? "Updating…" : "Update password"}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-6">
       <div className="w-full max-w-md rounded-2xl border border-border bg-card p-8 shadow-soft">
@@ -148,6 +262,12 @@ export default function LoginPage() {
           >
             {loading ? "Signing in…" : "Sign in"}
           </button>
+          <p className="text-center text-xs text-muted-foreground">
+            Need to change your password?{" "}
+            <button onClick={() => { setCpEmail(email); setStage("change-password"); }} className="underline hover:opacity-70">
+              Change password
+            </button>
+          </p>
         </div>
 
         <div className="mt-6 rounded-lg bg-muted p-3 font-mono text-xs text-muted-foreground space-y-2">

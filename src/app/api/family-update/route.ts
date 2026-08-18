@@ -1,7 +1,5 @@
-// Translates clinical care notes into a warm, plain-language update
-// suitable for a family member with no medical background. Deliberately
-// instructed to never mention medication names or doses — that's clinical
-// information that belongs with staff, not in a family-facing message.
+
+
 
 import { NextRequest, NextResponse } from "next/server";
 
@@ -64,9 +62,9 @@ export async function POST(request: NextRequest) {
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`;
 
-    // The explicit instruction never to mention medication names/doses is
-    // a deliberate safety boundary — that information belongs with
-    // clinical staff, not in a message sent to family.
+    
+    
+    
     const requestBody = {
       contents: [
         {

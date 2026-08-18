@@ -2,9 +2,7 @@
 
 import { useState, useEffect } from "react";
 
-// ================================================================
-// Types
-// ================================================================
+
 
 type Baseline = { mood: number; appetite: number; mobility: number; sleep: number };
 type WellbeingEntry = Baseline & { timestamp: number };
@@ -41,11 +39,10 @@ type Diagnosis = {
   id: string;
   condition: string;
   status: string;
+  timestamp?: number;
 };
 
-// Unified activity event — either a care note or a vitals entry, both tied
-// to a patient and an authorRole so staff presence on a shift can be derived
-// from any clinical data change, not just narrative notes.
+
 type ActivityEvent = {
   authorRole: string;
   timestamp: number;
@@ -53,9 +50,7 @@ type ActivityEvent = {
   kind: "note" | "vitals";
 };
 
-// ================================================================
-// Helpers
-// ================================================================
+
 
 function timeAgo(ts: number): string {
   const mins = (Date.now() - ts) / 60000;
@@ -133,57 +128,58 @@ function getDisplayName(authorRole: string): string {
   return (m ? m[1] : authorRole).trim() || authorRole;
 }
 
-// ================================================================
-// ShiftTimeline — three-row layout: shift band + per-type tracks
-// ================================================================
-//
-// All rows share a 6rem label column so the "now" line at nowPct%
-// of the track area aligns perfectly across the shift band, hour
-// ticks, and every data row.
 
-function ShiftTimeline({ todayNotes, todayVitals, todayMeds, nowMs, todayStartMs }: {
+
+function ShiftTimeline({ todayNotes, todayVitals, todayWellbeing, todayReferrals, todayDiagnoses, todayFallRisk, nowMs, todayStartMs, org }: {
   todayNotes: { timestamp: number }[];
   todayVitals: { timestamp: number }[];
-  todayMeds: { timestamp: number }[];
+  todayWellbeing?: { timestamp: number }[];
+  todayReferrals?: { timestamp: number }[];
+  todayDiagnoses?: { timestamp: number }[];
+  todayFallRisk?: { timestamp: number }[];
   nowMs: number;
   todayStartMs: number;
+  org: string;
 }) {
   const dayMs  = 24 * 3600 * 1000;
   const toPct  = (ts: number) => Math.min(100, Math.max(0, ((ts - todayStartMs) / dayMs) * 100));
   const nowPct = toPct(nowMs);
 
-  // label col = w-24 (6rem) + gap-3 (0.75rem) = 6.75rem
-  // "now" line left within outer wrapper:  calc(6.75rem + (100% - 6.75rem) * nowPct/100)
+  
+  
   const nowLeft = `calc(6.75rem + (100% - 6.75rem) * ${nowPct / 100})`;
 
   const BANDS = [
-    { left: "0%",     width: "25%",    bg: "linear-gradient(90deg,#e0e7ff,#c7d2fe)" }, // Night  00–06
-    { left: "25%",    width: "33.34%", bg: "linear-gradient(90deg,#fef9c3,#fde68a)" }, // Morning 06–14
-    { left: "58.34%", width: "33.33%", bg: "linear-gradient(90deg,#dbeafe,#bfdbfe)" }, // Afternoon 14–22
-    { left: "91.67%", width: "8.33%",  bg: "linear-gradient(90deg,#c7d2fe,#e0e7ff)" }, // Night  22–24
+    { left: "0%",     width: "25%",    bg: "linear-gradient(90deg,#e0e7ff,#c7d2fe)" }, 
+    { left: "25%",    width: "33.34%", bg: "linear-gradient(90deg,#fef9c3,#fde68a)" }, 
+    { left: "58.34%", width: "33.33%", bg: "linear-gradient(90deg,#dbeafe,#bfdbfe)" }, 
+    { left: "91.67%", width: "8.33%",  bg: "linear-gradient(90deg,#c7d2fe,#e0e7ff)" }, 
   ];
 
   const ROWS: { label: string; color: string; events: { timestamp: number }[] }[] = [
-    { label: "Care notes", color: "#2f8f8a", events: todayNotes  },
+    { label: "Care notes", color: "#2f8f8a", events: todayNotes },
     { label: "Vitals",     color: "#6366f1", events: todayVitals },
-    { label: "Medication", color: "#ef4444", events: todayMeds   },
+    ...(org === "agedcare" && todayWellbeing ? [{ label: "Wellbeing",  color: "#10b981", events: todayWellbeing }] : []),
+    ...(todayReferrals && todayReferrals.length >= 0 ? [{ label: "Referrals",  color: "#f59e0b", events: todayReferrals }] : []),
+    ...(org === "hospital" && todayDiagnoses ? [{ label: "Diagnoses",  color: "#3b82f6", events: todayDiagnoses }] : []),
+    ...(org === "agedcare" && todayFallRisk ? [{ label: "Fall risk",  color: "#f97316", events: todayFallRisk }] : []),
   ];
 
-  // Inner row — shared by shift band, hour ticks, and data rows
+  
   const ROW_CLS = "flex items-center gap-3";
   const SPACER  = <div className="w-24 shrink-0" />;
 
   return (
     <div className="relative select-none">
 
-      {/* ── Shift band (shares label-column spacer for alignment) ─ */}
+      
       <div className={`${ROW_CLS} mb-0.5`}>
         {SPACER}
         <div className="relative flex-1 h-9 overflow-hidden rounded-xl border border-border/40 shadow-sm">
           {BANDS.map((b, i) => (
             <div key={i} className="absolute inset-y-0" style={{ left: b.left, width: b.width, background: b.bg }} />
           ))}
-          {/* "Now" pill + line within the shift band */}
+          
           {nowMs > 0 && (
             <>
               <div
@@ -201,7 +197,7 @@ function ShiftTimeline({ todayNotes, todayVitals, todayMeds, nowMs, todayStartMs
         </div>
       </div>
 
-      {/* ── Hour tick labels ─────────────────────────────────────── */}
+      
       <div className={`${ROW_CLS} mb-3`}>
         {SPACER}
         <div className="relative flex-1 h-4">
@@ -217,28 +213,28 @@ function ShiftTimeline({ todayNotes, todayVitals, todayMeds, nowMs, todayStartMs
         </div>
       </div>
 
-      {/* ── Three data-type rows ─────────────────────────────────── */}
+      
       <div className="flex flex-col gap-1.5">
         {ROWS.map((row) => (
           <div key={row.label} className={ROW_CLS}>
-            {/* Label */}
+            
             <div className="flex w-24 shrink-0 items-center gap-1.5">
               <span className="h-2 w-2 rounded-full shrink-0" style={{ background: row.color }} />
               <span className="text-[11px] font-medium text-ink-soft">{row.label}</span>
             </div>
-            {/* Track */}
+            
             <div
               className="relative flex-1 h-8 overflow-hidden rounded-lg"
               style={{ background: "#f0f1f3" }}
             >
-              {/* Now line inside track */}
+              
               {nowMs > 0 && (
                 <div
                   className="absolute inset-y-0 w-px pointer-events-none"
                   style={{ left: `${nowPct}%`, transform: "translateX(-50%)", background: "rgba(15,23,42,0.18)" }}
                 />
               )}
-              {/* Event dots */}
+              
               {row.events.map((e, i) => {
                 const p = toPct(e.timestamp);
                 if (p < 0 || p > 100) return null;
@@ -260,26 +256,25 @@ function ShiftTimeline({ todayNotes, todayVitals, todayMeds, nowMs, todayStartMs
         ))}
       </div>
 
-      {/* ── Now connector — spans gap between rows at track x ────── */}
-      {/* Covers only the area between the shift band and the data rows,
-          bridging the visual gap left by overflow-hidden in each track. */}
+      
+      
       {nowMs > 0 && (
         <div
           className="pointer-events-none absolute w-px"
           style={{
             left: nowLeft,
-            top: "2.625rem",   // bottom of shift band (2.25rem h) + 0.125rem gap
-            bottom: "1.75rem", // top of legend area (legend height estimate)
+            top: "2.625rem",   
+            bottom: "1.75rem", 
             background: "rgba(15,23,42,0.10)",
             transform: "translateX(-50%)",
           }}
         />
       )}
 
-      {/* ── Legend ───────────────────────────────────────────────── */}
+      
       <div className="mt-3 border-t border-border pt-2.5">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-          {/* Shift pills */}
+          
           {[
             { bg: "linear-gradient(to right,#e0e7ff,#c7d2fe)", label: "Night"     },
             { bg: "linear-gradient(to right,#fef9c3,#fde68a)", label: "Morning"   },
@@ -290,13 +285,10 @@ function ShiftTimeline({ todayNotes, todayVitals, todayMeds, nowMs, todayStartMs
               {label}
             </span>
           ))}
-          {/* Divider */}
+          
           <span className="h-3.5 w-px bg-border" />
-          {/* Data-type dots */}
-          {[
-            { color: "#2f8f8a", label: "Care notes" },
-            { color: "#6366f1", label: "Vitals"     },
-          ].map(({ color, label }) => (
+          
+          {ROWS.map(({ color, label }) => (
             <span key={label} className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
               <span className="h-2 w-2 rounded-full shrink-0" style={{ background: color }} />
               {label}
@@ -308,9 +300,7 @@ function ShiftTimeline({ todayNotes, todayVitals, todayMeds, nowMs, todayStartMs
   );
 }
 
-// ================================================================
-// ManagerView
-// ================================================================
+
 
 export default function ManagerView({
   patients,
@@ -318,6 +308,8 @@ export default function ManagerView({
   wellbeingByPatient,
   vitalsByPatient,
   diagnosesByPatient,
+  referralsByPatient,
+  fallRiskByPatient,
   org,
 }: {
   patients: Patient[];
@@ -325,12 +317,15 @@ export default function ManagerView({
   wellbeingByPatient: Record<string, WellbeingEntry[]>;
   vitalsByPatient?: Record<string, VitalSigns[]>;
   diagnosesByPatient?: Record<string, Diagnosis[]>;
+  referralsByPatient?: Record<string, { id: string; timestamp: number }[]>;
+  fallRiskByPatient?: Record<string, { id: string; timestamp: number }[]>;
   org: string;
 }) {
   const [selectedPatientId, setSelectedPatientId]   = useState<string | null>(null);
   const [expandedPrevShift, setExpandedPrevShift]   = useState<string | null>(null);
   const [shiftPeriod, setShiftPeriod]               = useState<"recent" | "week" | "month">("recent");
-  const [expandedDayKey, setExpandedDayKey]         = useState<string | null>(null);
+  const [expandedDayKeys, setExpandedDayKeys]       = useState<Set<string>>(new Set());
+  const [timelineOffset, setTimelineOffset]         = useState(0); 
 
   const personLabel    = org === "hospital" ? "patients"  : "residents";
   const personLabelCap = org === "hospital" ? "Patients"  : "Residents";
@@ -339,21 +334,35 @@ export default function ManagerView({
   const { nowMs, todayMs, shift } = timeState;
 
   useEffect(() => {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setTimeState({ nowMs: new Date().getTime(), todayMs: d.getTime(), shift: getCurrentShift() });
+    function update() {
+      const d = new Date();
+      d.setHours(0, 0, 0, 0);
+      setTimeState({ nowMs: Date.now(), todayMs: d.getTime(), shift: getCurrentShift() });
+    }
+    update();
+    const id = setInterval(update, 60_000); 
+    return () => clearInterval(id);
   }, []);
 
-  // ── Notes (for display + note-specific stats) ─────────────────
+  
+  const viewDayStartMs = todayMs - timelineOffset * 24 * 3600 * 1000;
+  const viewDayEndMs   = viewDayStartMs + 24 * 3600 * 1000;
+  const timelineNowMs  = timelineOffset === 0 ? nowMs : 0; 
+
+  const timelineDateLabel = (() => {
+    if (timelineOffset === 0) return "Today";
+    if (timelineOffset === 1) return "Yesterday";
+    const d = new Date(viewDayStartMs);
+    return d.toLocaleDateString("en-AU", { weekday: "long", day: "numeric", month: "short" });
+  })();
+
+  
 
   const allNotes = patients.flatMap((p) =>
     (notesByPatient[p.id] ?? []).map((n) => ({ ...n, patientId: p.id, patientName: p.name }))
   );
 
-  const todayNotes = allNotes.filter((n) => n.timestamp >= todayMs);
-
-  // ── Vitals with authorRole (for shift counting) ───────────────
+  
 
   const allVitals = patients.flatMap((p) =>
     (vitalsByPatient?.[p.id] ?? [])
@@ -361,13 +370,21 @@ export default function ManagerView({
       .map((v) => ({ authorRole: v.authorRole, timestamp: v.timestamp, patientId: p.id }))
   );
 
-  const todayVitals = allVitals.filter((v) => v.timestamp >= todayMs);
+  
+  const allWellbeing = patients.flatMap((p) =>
+    (wellbeingByPatient[p.id] ?? []).map((w) => ({ timestamp: w.timestamp }))
+  );
+  const allReferrals = patients.flatMap((p) =>
+    (referralsByPatient?.[p.id] ?? []).map((r) => ({ timestamp: r.timestamp }))
+  );
+  const allDiagnoses = patients.flatMap((p) =>
+    (diagnosesByPatient?.[p.id] ?? []).filter((d) => d.timestamp != null).map((d) => ({ timestamp: d.timestamp! }))
+  );
+  const allFallRisk = patients.flatMap((p) =>
+    (fallRiskByPatient?.[p.id] ?? []).map((f) => ({ timestamp: f.timestamp }))
+  );
 
-  // ── Unified activity events (notes + vitals) for shift metrics ─
-  // Any data written to a patient — care note OR vitals reading —
-  // counts as clinical activity, so staff coverage is not under-counted
-  // when nurses or doctors record vitals without adding a narrative note.
-
+  
   const allActivityEvents: ActivityEvent[] = [
     ...allNotes.map((n) => ({ authorRole: n.authorRole, timestamp: n.timestamp, patientId: n.patientId, kind: "note" as const })),
     ...allVitals.map((v) => ({ authorRole: v.authorRole, timestamp: v.timestamp, patientId: v.patientId, kind: "vitals" as const })),
@@ -376,25 +393,32 @@ export default function ManagerView({
   const shiftActivities = allActivityEvents.filter((e) => e.timestamp >= shift.start);
   const shiftClinicalActivities = shiftActivities.filter((e) => isHumanClinicalStaff(e.authorRole));
 
-  const staffTodayCount = new Set(
-    allActivityEvents
-      .filter((e) => e.timestamp >= todayMs && isHumanClinicalStaff(e.authorRole))
-      .map((e) => e.authorRole)
-  ).size;
+  
+  
+  const viewDayNotes = allNotes.filter((n) => n.timestamp >= viewDayStartMs && n.timestamp < viewDayEndMs);
+  const viewDayActivityEvents = allActivityEvents.filter((e) => e.timestamp >= viewDayStartMs && e.timestamp < viewDayEndMs);
+  const viewDayClinicalEvents = viewDayActivityEvents.filter((e) => isHumanClinicalStaff(e.authorRole));
+  const viewDayStaffCount = new Set(viewDayClinicalEvents.map((e) => e.authorRole)).size;
 
-  // ── Per-patient shift assignment ──────────────────────────────
-  // Doctor(s) and nurse(s) who have logged a note OR recorded vitals
-  // for each patient this shift.
+  
+  
+  const viewDayShiftAssignment = patients.map((p) => {
+    const source = timelineOffset === 0 ? shiftClinicalActivities : viewDayClinicalEvents;
+    const pEvents = source.filter((e) => e.patientId === p.id);
+    const doctors = [...new Set(pEvents.filter((e) => getRoleType(e.authorRole) === "Doctor").map((e) => e.authorRole))];
+    const nurses  = [...new Set(pEvents.filter((e) => getRoleType(e.authorRole) === "Nurse").map((e) => e.authorRole))];
+    return { patient: p, doctors, nurses, count: pEvents.length };
+  });
 
+  
   const shiftAssignment = patients.map((p) => {
     const pEvents  = shiftClinicalActivities.filter((e) => e.patientId === p.id);
     const doctors  = [...new Set(pEvents.filter((e) => getRoleType(e.authorRole) === "Doctor").map((e) => e.authorRole))];
     const nurses   = [...new Set(pEvents.filter((e) => getRoleType(e.authorRole) === "Nurse").map((e) => e.authorRole))];
-    const count    = pEvents.length;
-    return { patient: p, doctors, nurses, count };
+    return { patient: p, doctors, nurses, count: pEvents.length };
   });
 
-  // ── Staff map (human clinical only) ──────────────────────────
+  
 
   type StaffEntry = {
     key: string;
@@ -430,7 +454,7 @@ export default function ManagerView({
   const doctors = [...staffMap.values()].filter((s) => s.roleType === "Doctor").sort((a, b) => b.lastActive - a.lastActive);
   const nurses  = [...staffMap.values()].filter((s) => s.roleType === "Nurse").sort((a, b) => b.lastActive - a.lastActive);
 
-  // ── Previous shifts ───────────────────────────────────────────
+  
 
   const shiftCount = shiftPeriod === "recent" ? 4 : shiftPeriod === "week" ? 21 : 90;
   const prevShiftWindows = getPreviousShiftWindows(shift.start, shiftCount);
@@ -451,7 +475,7 @@ export default function ManagerView({
     return { ...w, staff: [...sm.entries()].map(([key, v]) => ({ key, ...v })).sort((a, b) => b.count - a.count), totalEvents: windowEvents.length };
   });
 
-  // ── Day-grouped shifts for week/month views ───────────────────
+  
 
   type DayShifts = { dateKey: string; dateLabel: string; shifts: typeof prevShiftData };
   const dayShiftGroups: DayShifts[] = (() => {
@@ -459,7 +483,7 @@ export default function ManagerView({
     const map = new Map<string, DayShifts>();
     for (const w of prevShiftData) {
       const d = new Date(w.start);
-      const dateKey = d.toISOString().slice(0, 10);
+      const dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
       const dateLabel = d.toLocaleDateString("en-AU", { weekday: "long", day: "numeric", month: "short" });
       if (!map.has(dateKey)) map.set(dateKey, { dateKey, dateLabel, shifts: [] });
       map.get(dateKey)!.shifts.push(w);
@@ -467,7 +491,7 @@ export default function ManagerView({
     return [...map.values()];
   })();
 
-  // ── Wellbeing / org avg ───────────────────────────────────────
+  
 
   const latestChecks = patients.flatMap((p) => {
     const hist = wellbeingByPatient[p.id] ?? [];
@@ -485,7 +509,7 @@ export default function ManagerView({
       : null;
   const orgOverallAvg = orgAvg ? (orgAvg.mood + orgAvg.appetite + orgAvg.mobility + orgAvg.sleep) / 4 : null;
 
-  // ── Per-patient status for list ───────────────────────────────
+  
 
   const patientStatuses = patients.map((p) => {
     const hist    = wellbeingByPatient[p.id] ?? [];
@@ -505,7 +529,7 @@ export default function ManagerView({
     (ps) => ps.status === "alert" || (ps.todayNoteCount === 0 && ps.status !== "no-data")
   );
 
-  // ── Selected patient detail ───────────────────────────────────
+  
 
   const selectedPatient = patients.find((p) => p.id === selectedPatientId) ?? null;
   const selectedStatus  = patientStatuses.find((ps) => ps.patient.id === selectedPatientId) ?? null;
@@ -516,16 +540,12 @@ export default function ManagerView({
 
   const selectedShiftAssignment = shiftAssignment.find((sa) => sa.patient.id === selectedPatientId) ?? null;
 
-  const todayActivitiesForPatient = selectedPatientId
-    ? allActivityEvents.filter((e) => e.patientId === selectedPatientId && e.timestamp >= todayMs)
+  const viewDayActivitiesForPatient = selectedPatientId
+    ? viewDayClinicalEvents.filter((e) => e.patientId === selectedPatientId)
     : [];
 
-  const selectedTodayDoctors = selectedPatientId
-    ? [...new Set(todayActivitiesForPatient.filter((e) => getRoleType(e.authorRole) === "Doctor").map((e) => e.authorRole))]
-    : [];
-  const selectedTodayNurses = selectedPatientId
-    ? [...new Set(todayActivitiesForPatient.filter((e) => getRoleType(e.authorRole) === "Nurse").map((e) => e.authorRole))]
-    : [];
+  const selectedTodayDoctors = [...new Set(viewDayActivitiesForPatient.filter((e) => getRoleType(e.authorRole) === "Doctor").map((e) => e.authorRole))];
+  const selectedTodayNurses  = [...new Set(viewDayActivitiesForPatient.filter((e) => getRoleType(e.authorRole) === "Nurse").map((e) => e.authorRole))];
 
   const selectedLatestVitals = selectedPatientId && vitalsByPatient?.[selectedPatientId]
     ? [...vitalsByPatient[selectedPatientId]].sort((a, b) => b.timestamp - a.timestamp)[0]
@@ -534,12 +554,22 @@ export default function ManagerView({
   const selectedDiagnoses = selectedPatientId ? (diagnosesByPatient?.[selectedPatientId] ?? []) : [];
   const activeDx = selectedDiagnoses.filter((d) => d.status === "Active" || d.status === "Chronic");
 
-  // ── Stats cards ───────────────────────────────────────────────
+  
 
   const statsCards = [
-    { label: personLabelCap,      value: String(patients.length),                    sub: org === "hospital" ? "Across all wards" : "In care", accent: "text-ink" },
-    { label: "Notes today",       value: String(todayNotes.length),                   sub: `${staffTodayCount} clinical staff active`, accent: "text-ink" },
-    { label: "This shift",        value: String(shiftClinicalActivities.length),      sub: shift.label, accent: shift.colorClass },
+    { label: personLabelCap, value: String(patients.length), sub: org === "hospital" ? "Across all wards" : "In care", accent: "text-ink" },
+    {
+      label: timelineOffset === 0 ? "Notes today" : `Notes — ${timelineDateLabel}`,
+      value: String(viewDayNotes.length),
+      sub: `${viewDayStaffCount} clinical staff active`,
+      accent: "text-ink",
+    },
+    {
+      label: timelineOffset === 0 ? "This shift activity" : ` ${timelineDateLabel} activity`,
+      value: timelineOffset === 0 ? String(shiftClinicalActivities.length) : String(viewDayClinicalEvents.length),
+      sub: timelineOffset === 0 ? shift.label : `${viewDayStaffCount} staff · full day`,
+      accent: timelineOffset === 0 ? shift.colorClass : "text-ink",
+    },
     {
       label: "Avg wellbeing",
       value: orgOverallAvg !== null ? `${orgOverallAvg.toFixed(1)}/10` : "—",
@@ -548,7 +578,7 @@ export default function ManagerView({
     },
   ];
 
-  // ── Render helpers ────────────────────────────────────────────
+  
 
   const dotColor = (s: "ok" | "watch" | "alert" | "no-data") =>
     s === "ok" ? "bg-teal" : s === "watch" ? "bg-amber-500" : s === "alert" ? "bg-destructive" : "bg-muted-foreground";
@@ -556,7 +586,7 @@ export default function ManagerView({
   const scorePill = (s: "ok" | "watch" | "alert" | "no-data") =>
     s === "ok" ? "bg-teal-soft text-teal" : s === "watch" ? "bg-amber-100 text-amber-700" : s === "alert" ? "bg-red-100 text-red-700" : "bg-secondary text-ink-soft";
 
-  // Simple inline chevron
+  
   const ChevronDown = () => (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-muted-foreground">
       <polyline points="6 9 12 15 18 9" />
@@ -571,7 +601,7 @@ export default function ManagerView({
   return (
     <div className="container-page py-6">
 
-      {/* ── Stats ──────────────────────────────────────────────── */}
+      
       <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
         {statsCards.map(({ label, value, sub, accent }) => (
           <div key={label} className="rounded-xl border border-border bg-card p-4 shadow-soft">
@@ -584,19 +614,40 @@ export default function ManagerView({
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
 
-        {/* ── Left 2/3 ──────────────────────────────────────────── */}
+        
         <div className="flex flex-col gap-6 lg:col-span-2">
 
-          {/* 24-hour timeline */}
+          
           <div className="rounded-xl border border-border bg-white p-5 shadow-soft">
-            {/* Header */}
+            
             <div className="mb-4">
-              <div className="text-sm font-bold text-ink">24-hour activity timeline</div>
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-bold text-ink">24-hour activity timeline</div>
+                
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setTimelineOffset((o) => o + 1)}
+                    className="rounded-full px-2.5 py-1 text-sm text-ink-soft hover:bg-secondary"
+                    title="Previous day"
+                  >
+                    ‹
+                  </button>
+                  <span className="min-w-[90px] text-center text-xs font-medium text-ink">{timelineDateLabel}</span>
+                  <button
+                    onClick={() => setTimelineOffset((o) => Math.max(0, o - 1))}
+                    disabled={timelineOffset === 0}
+                    className="rounded-full px-2.5 py-1 text-sm text-ink-soft hover:bg-secondary disabled:opacity-30"
+                    title="Next day"
+                  >
+                    ›
+                  </button>
+                </div>
+              </div>
               <p className="mt-0.5 text-xs text-muted-foreground">
                 Shifts, care notes and vitals on one shared clock.
               </p>
-              {/* Shift status pill — shown after hydration so time string is accurate */}
-              {nowMs > 0 && (() => {
+              
+              {timelineOffset === 0 && nowMs > 0 && (() => {
                 const [shiftName, shiftRange] = shift.label.split(/\s{2,}/);
                 const nowTimeStr = new Date(nowMs).toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit", hour12: false });
                 const dotCls = shift.label.startsWith("Morning") ? "bg-amber-500" : shift.label.startsWith("Afternoon") ? "bg-sky-500" : "bg-indigo-400";
@@ -612,19 +663,26 @@ export default function ManagerView({
               })()}
             </div>
             <ShiftTimeline
-              todayNotes={todayNotes}
-              todayVitals={todayVitals}
-              todayMeds={[]}
-              nowMs={nowMs}
-              todayStartMs={todayMs}
+              todayNotes={allNotes.filter((n) => n.timestamp >= viewDayStartMs && n.timestamp < viewDayEndMs)}
+              todayVitals={allVitals.filter((v) => v.timestamp >= viewDayStartMs && v.timestamp < viewDayEndMs)}
+              todayWellbeing={allWellbeing.filter((w) => w.timestamp >= viewDayStartMs && w.timestamp < viewDayEndMs)}
+              todayReferrals={allReferrals.filter((r) => r.timestamp >= viewDayStartMs && r.timestamp < viewDayEndMs)}
+              todayDiagnoses={allDiagnoses.filter((d) => d.timestamp >= viewDayStartMs && d.timestamp < viewDayEndMs)}
+              todayFallRisk={allFallRisk.filter((f) => f.timestamp >= viewDayStartMs && f.timestamp < viewDayEndMs)}
+              nowMs={timelineNowMs}
+              todayStartMs={viewDayStartMs}
+              org={org}
             />
           </div>
 
-          {/* Current shift assignment — per patient */}
+          
           <div className="rounded-xl border border-border bg-card p-4 shadow-soft">
-            <div className="mb-3 text-sm font-semibold text-ink">
-              Current shift — staff per {org === "hospital" ? "patient" : "resident"}
+            <div className="mb-1 text-sm font-semibold text-ink">
+              {timelineOffset === 0 ? `Current shift — staff per ${org === "hospital" ? "patient" : "resident"}` : `Staff on ${timelineDateLabel} — per ${org === "hospital" ? "patient" : "resident"}`}
             </div>
+            {timelineOffset === 0 && (
+              <p className="mb-3 text-xs text-muted-foreground">{shift.label}</p>
+            )}
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -637,7 +695,7 @@ export default function ManagerView({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {shiftAssignment.map(({ patient: p, doctors: pDocs, nurses: pNurses, count }) => (
+                  {viewDayShiftAssignment.map(({ patient: p, doctors: pDocs, nurses: pNurses, count }) => (
                     <tr
                       key={p.id}
                       className={`cursor-pointer transition-colors ${selectedPatientId === p.id ? "bg-teal-soft" : "hover:bg-secondary"}`}
@@ -680,11 +738,11 @@ export default function ManagerView({
             )}
           </div>
 
-          {/* Patient list + detail panel */}
+          
           <div className="rounded-xl border border-border bg-card shadow-soft">
             <div className="flex min-h-0">
 
-              {/* Patient list sidebar */}
+              
               <div className="w-44 shrink-0 border-r border-border p-3">
                 <div className="mb-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                   {personLabelCap}
@@ -724,7 +782,7 @@ export default function ManagerView({
                 </div>
               </div>
 
-              {/* Patient detail panel */}
+              
               <div className="min-w-0 flex-1 p-4">
                 {!selectedPatient ? (
                   <div className="flex h-40 items-center justify-center text-sm text-ink-soft">
@@ -732,7 +790,7 @@ export default function ManagerView({
                   </div>
                 ) : (
                   <div>
-                    {/* Header */}
+                    
                     <div className="mb-4 flex items-start justify-between gap-2">
                       <div>
                         <h2 className="text-lg font-semibold text-ink">{selectedPatient.name}</h2>
@@ -745,7 +803,7 @@ export default function ManagerView({
                       )}
                     </div>
 
-                    {/* Staff responsibility — this shift */}
+                    
                     <div className="mb-4 rounded-lg border border-border bg-background p-3">
                       <div className="mb-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                         Staff on duty this shift
@@ -795,7 +853,7 @@ export default function ManagerView({
                       )}
                     </div>
 
-                    {/* Wellbeing bars */}
+                    
                     {selectedStatus?.latest && (
                       <div className="mb-4 rounded-lg border border-border bg-background p-3">
                         <div className="mb-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -822,7 +880,7 @@ export default function ManagerView({
                       </div>
                     )}
 
-                    {/* Latest vitals */}
+                    
                     {selectedLatestVitals && (
                       <div className="mb-4 rounded-lg border border-border bg-background p-3">
                         <div className="mb-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -845,7 +903,7 @@ export default function ManagerView({
                       </div>
                     )}
 
-                    {/* Active diagnoses */}
+                    
                     {activeDx.length > 0 && (
                       <div className="mb-4 rounded-lg border border-border bg-background p-3">
                         <div className="mb-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -861,7 +919,7 @@ export default function ManagerView({
                       </div>
                     )}
 
-                    {/* All notes */}
+                    
                     <div>
                       <div className="mb-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                         All notes ({selectedNotes.length})
@@ -896,7 +954,7 @@ export default function ManagerView({
             </div>
           </div>
 
-          {/* ── Previous shifts ──────────────────────────────────── */}
+          
           <div className="rounded-xl border border-border bg-card p-4 shadow-soft">
             <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -905,12 +963,21 @@ export default function ManagerView({
                   Completed shifts — who worked, which {personLabel} they covered.
                 </p>
               </div>
-              {/* Period toggle */}
+              
               <div className="flex shrink-0 rounded-lg border border-border bg-secondary p-0.5 text-xs">
                 {(["recent", "week", "month"] as const).map((p) => (
                   <button
                     key={p}
-                    onClick={() => { setShiftPeriod(p); setExpandedPrevShift(null); setExpandedDayKey(null); }}
+                    onClick={() => {
+                      setShiftPeriod(p);
+                      setExpandedPrevShift(null);
+                      // Auto-expand all days for week view; clear for month/recent
+                      if (p === "week") {
+                        setExpandedDayKeys(new Set(dayShiftGroups.map((d) => d.dateKey)));
+                      } else {
+                        setExpandedDayKeys(new Set());
+                      }
+                    }}
                     className={`rounded-md px-3 py-1 font-medium transition-colors ${
                       shiftPeriod === p ? "bg-white text-ink shadow-sm" : "text-ink-soft hover:text-ink"
                     }`}
@@ -921,7 +988,7 @@ export default function ManagerView({
               </div>
             </div>
 
-            {/* ── Recent: individual shift accordions (original behaviour) ── */}
+            
             {shiftPeriod === "recent" && (
               <div className="flex flex-col gap-2">
                 {prevShiftData.map((w) => {
@@ -1021,20 +1088,37 @@ export default function ManagerView({
               </div>
             )}
 
-            {/* ── Week / Month: day-grouped accordions ────────────── */}
+            
             {shiftPeriod !== "recent" && (
               <div className="flex flex-col gap-2">
+                {dayShiftGroups.length > 0 && (
+                  <div className="flex justify-end">
+                    <button
+                      onClick={() => {
+                        const allOpen = dayShiftGroups.every((d) => expandedDayKeys.has(d.dateKey));
+                        setExpandedDayKeys(allOpen ? new Set() : new Set(dayShiftGroups.map((d) => d.dateKey)));
+                      }}
+                      className="text-xs text-muted-foreground hover:text-ink"
+                    >
+                      {dayShiftGroups.every((d) => expandedDayKeys.has(d.dateKey)) ? "Collapse all" : "Expand all"}
+                    </button>
+                  </div>
+                )}
                 {dayShiftGroups.length === 0 && (
                   <p className="text-sm text-ink-soft">No shift data available.</p>
                 )}
                 {dayShiftGroups.map((day) => {
-                  const isDayOpen = expandedDayKey === day.dateKey;
+                  const isDayOpen = expandedDayKeys.has(day.dateKey);
                   const dayTotalEvents = day.shifts.reduce((s, w) => s + w.totalEvents, 0);
                   const dayStaffKeys  = new Set(day.shifts.flatMap((w) => w.staff.map((s) => s.key)));
                   return (
                     <div key={day.dateKey} className="overflow-hidden rounded-xl border border-border">
                       <button
-                        onClick={() => setExpandedDayKey(isDayOpen ? null : day.dateKey)}
+                        onClick={() => setExpandedDayKeys((prev) => {
+                          const next = new Set(prev);
+                          isDayOpen ? next.delete(day.dateKey) : next.add(day.dateKey);
+                          return next;
+                        })}
                         className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-secondary"
                       >
                         <span className="text-sm font-medium text-ink">{day.dateLabel}</span>
@@ -1123,10 +1207,10 @@ export default function ManagerView({
           </div>
         </div>
 
-        {/* ── Right 1/3 ──────────────────────────────────────────── */}
+        
         <div className="flex flex-col gap-6">
 
-          {/* Alerts */}
+          
           {alertPatients.length > 0 && (
             <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
               <div className="mb-2 flex items-center gap-1.5">
@@ -1155,7 +1239,7 @@ export default function ManagerView({
             </div>
           )}
 
-          {/* Doctors on ward */}
+          
           <div className="rounded-xl border border-border bg-card p-4 shadow-soft">
             <div className="mb-3 text-sm font-semibold text-ink">Doctors</div>
             {doctors.length === 0 ? (
@@ -1195,7 +1279,7 @@ export default function ManagerView({
             )}
           </div>
 
-          {/* Nurses on ward */}
+          
           <div className="rounded-xl border border-border bg-card p-4 shadow-soft">
             <div className="mb-3 text-sm font-semibold text-ink">Nurses / Carers</div>
             {nurses.length === 0 ? (
@@ -1235,7 +1319,7 @@ export default function ManagerView({
             )}
           </div>
 
-          {/* Org wellbeing snapshot */}
+          
           {orgAvg && (
             <div className="rounded-xl border border-border bg-card p-4 shadow-soft">
               <div className="mb-1 text-sm font-semibold text-ink">Org wellbeing snapshot</div>

@@ -1,28 +1,21 @@
-// Generates an AI shift-handover summary for one patient, based on their
-// notes AND their personalised profile (preferences, routine, communication
-// needs, medications). Runs only on the server — this is what keeps
-// GEMINI_API_KEY hidden from the browser.
+
+
 
 import { NextRequest, NextResponse } from "next/server";
 
 type HandoverRequest = {
   patientName: string;
   age: number;
-  profileContext: string; // formatted preferences/routine/communication/medications text
+  profileContext: string; 
   notes: { authorRole: string; content: string; type: string }[];
 };
 
-// Pauses execution for a given number of milliseconds — used between retry
-// attempts below.
+
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// Wraps the Gemini call with automatic retry logic. Specifically retries on
-// a 503 "UNAVAILABLE" response — Google's own signal for "we're temporarily
-// overloaded, try again" — with a short, increasing delay between attempts.
-// Any OTHER kind of error (bad key, malformed request) is NOT retried, since
-// retrying those would just fail the same way every time.
+
 async function callGeminiWithRetry(
   url: string,
   requestBody: object,
@@ -39,9 +32,9 @@ async function callGeminiWithRetry(
 
     if (response.ok) return response;
 
-    // Clone the response before reading it, since a Response body can only
-    // be read once — we need to check its status AND potentially return it
-    // untouched to the caller if this was the final attempt.
+    
+    
+    
     const cloned = response.clone();
     const isRetryable = response.status === 503;
     lastResponse = response;
@@ -51,10 +44,10 @@ async function callGeminiWithRetry(
     }
 
     console.log(`Gemini returned 503 (attempt ${attempt}/${maxAttempts}) — retrying in ${attempt}s...`);
-    await wait(attempt * 1000); // 1s before 2nd attempt, 2s before 3rd
+    await wait(attempt * 1000); 
   }
 
-  return lastResponse!; // never actually reached — loop above always returns
+  return lastResponse!; 
 }
 
 export async function POST(request: NextRequest) {
@@ -79,9 +72,9 @@ const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-
         {
           parts: [
             {
-              // Includes profileContext so the handover can reference
-              // personalised details (e.g. communication needs) where
-              // relevant, not just list clinical facts from notes.
+              
+              
+              
               text: `You are TraceWell's AI handover assistant. Write a concise shift handover brief for the incoming nurse, based on the raw notes and profile below for one patient. Structure it as:
 PRIORITY: (one line, only if something needs urgent attention, otherwise omit)
 SUMMARY: (2-3 sentences on overall status)

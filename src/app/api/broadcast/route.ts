@@ -1,5 +1,4 @@
-// Receives a LiveEvent POST, fans it out via SSE, and persists it to the DB.
-// DB writes are best-effort — a failed write never blocks the real-time push.
+
 
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
@@ -23,13 +22,13 @@ export async function POST(req: NextRequest) {
 
   const { org } = body as { org: string };
 
-  // Update the server-side in-memory hot cache
+  
   applyEventToStore(org, body);
 
-  // Fan out to all SSE subscribers for this org
+  
   sseBroadcast(org, body);
 
-  // Persist to DB (async, best-effort — don't await so the response is instant)
+  
   const session = await getServerSession(authOptions);
   const authorId = (session?.user as { id?: string } | undefined)?.id;
   persistToDb(body, authorId).catch(() => {});
@@ -112,6 +111,15 @@ async function persistToDb(event: unknown, authorId?: string): Promise<void> {
         },
       });
 
+    } else if (ev.type === "ack_referral") {
+      await prisma.referralNote.update({
+        where: { id: ev.referralId as string },
+        data: {
+          acknowledged:   true,
+          acknowledgedBy: ev.acknowledgedBy as string,
+          acknowledgedAt: new Date(ev.acknowledgedAt as number),
+        },
+      });
     } else if (ev.type === "referral" && ev.referral && authorId) {
       const ref = ev.referral as Record<string, unknown>;
       const recipients = (ref.toRecipients as string[] | undefined) ?? [];
@@ -137,8 +145,8 @@ async function persistToDb(event: unknown, authorId?: string): Promise<void> {
       });
     }
   } catch (err) {
-    // Expected when: patientId is a demo ID (not a real FK), migration not yet run, etc.
-    // Log at debug level so routine dev errors don't clutter the console.
+    
+    
     if (process.env.NODE_ENV === "development") {
       console.debug("[broadcast] DB persist skipped:", (err as Error).message.slice(0, 120));
     }

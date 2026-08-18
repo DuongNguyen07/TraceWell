@@ -1,10 +1,5 @@
-// In-memory SSE connection bus.
-// Keyed by org so events are scoped — hospital staff never see agedcare events.
-//
-// Uses a Node.js global so the Map survives Next.js route-handler hot reloads
-// in development (each reload re-executes the module but the global persists).
-// In production (standalone) there is a single Node process, so this is fine.
-// For a multi-instance deployment, swap this for Redis Pub/Sub.
+
+
 
 export type SSEClient = ReadableStreamDefaultController<Uint8Array>;
 

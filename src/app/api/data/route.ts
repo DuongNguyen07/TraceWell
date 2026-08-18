@@ -109,6 +109,8 @@ export async function GET(req: NextRequest) {
         id:             r.id,
         fromName:       r.fromName,
         toRecipient:    r.toRecipient,
+        toRecipients:   (r.toRecipients as string[] | null) ?? (r.toRecipient ? [r.toRecipient] : []),
+        referralType:   r.referralType ?? "internal",
         subject:        r.subject,
         message:        r.message,
         timestamp:      r.createdAt.getTime(),

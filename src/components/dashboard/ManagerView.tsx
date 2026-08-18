@@ -40,6 +40,7 @@ type Diagnosis = {
   condition: string;
   status: string;
   timestamp?: number;
+  authorRole?: string;
 };
 
 
@@ -47,7 +48,7 @@ type ActivityEvent = {
   authorRole: string;
   timestamp: number;
   patientId: string;
-  kind: "note" | "vitals";
+  kind: "note" | "vitals" | "diagnosis" | "referral";
 };
 
 
@@ -317,7 +318,7 @@ export default function ManagerView({
   wellbeingByPatient: Record<string, WellbeingEntry[]>;
   vitalsByPatient?: Record<string, VitalSigns[]>;
   diagnosesByPatient?: Record<string, Diagnosis[]>;
-  referralsByPatient?: Record<string, { id: string; timestamp: number }[]>;
+  referralsByPatient?: Record<string, { id: string; timestamp: number; fromName?: string }[]>;
   fallRiskByPatient?: Record<string, { id: string; timestamp: number }[]>;
   org: string;
 }) {
@@ -388,6 +389,18 @@ export default function ManagerView({
   const allActivityEvents: ActivityEvent[] = [
     ...allNotes.map((n) => ({ authorRole: n.authorRole, timestamp: n.timestamp, patientId: n.patientId, kind: "note" as const })),
     ...allVitals.map((v) => ({ authorRole: v.authorRole, timestamp: v.timestamp, patientId: v.patientId, kind: "vitals" as const })),
+    // Diagnoses authored by doctors count as clinical activity
+    ...patients.flatMap((p) =>
+      (diagnosesByPatient?.[p.id] ?? [])
+        .filter((d) => d.timestamp && d.authorRole)
+        .map((d) => ({ authorRole: d.authorRole!, timestamp: d.timestamp!, patientId: p.id, kind: "diagnosis" as const }))
+    ),
+    // Referrals sent by clinical staff count as clinical activity
+    ...patients.flatMap((p) =>
+      (referralsByPatient?.[p.id] ?? [])
+        .filter((r) => r.fromName)
+        .map((r) => ({ authorRole: r.fromName!, timestamp: r.timestamp, patientId: p.id, kind: "referral" as const }))
+    ),
   ];
 
   const shiftActivities = allActivityEvents.filter((e) => e.timestamp >= shift.start);

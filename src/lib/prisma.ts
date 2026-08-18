@@ -5,7 +5,10 @@ import { Pool } from 'pg'
 function createPrismaClient() {
   const pool = new Pool({
     connectionString: process.env.DATABASE_URL!,
-    ssl: { rejectUnauthorized: false }, 
+    ssl: { rejectUnauthorized: false },
+    // Keep well under Supabase session-mode limit (15).
+    // For production scale, switch DATABASE_URL to the transaction pooler (port 6543).
+    max: 3,
   })
   const adapter = new PrismaPg(pool)
   return new PrismaClient({
@@ -18,6 +21,6 @@ const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined
 }
 
-export const prisma = globalForPrisma.prisma ?? createPrismaClient()
-
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
+// Always cache — the previous production guard caused a new Pool per request, exhausting connections.
+if (!globalForPrisma.prisma) globalForPrisma.prisma = createPrismaClient()
+export const prisma = globalForPrisma.prisma

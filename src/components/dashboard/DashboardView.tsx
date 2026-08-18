@@ -62,7 +62,8 @@ type LiveEvent =
   | { type: "chat"; org: string; patientId: string; patientName: string; authorName: string; authorRole: string; preview: string; timestamp: number; message: ChatMessage }
   | { type: "referral"; org: string; notifId: string; patientId: string; patientName: string; authorRole: string; toRecipients: string[]; subject: string; timestamp: number; referral: ReferralNote }
   | { type: "vitals"; org: string; patientId: string; patientName: string; authorRole: string; timestamp: number; vitals: VitalSigns }
-  | { type: "ack_referral"; org: string; patientId: string; referralId: string; acknowledgedBy: string; acknowledgedAt: number };
+  | { type: "ack_referral"; org: string; patientId: string; referralId: string; acknowledgedBy: string; acknowledgedAt: number }
+  | { type: "clinical_visit"; org: string; patientId: string; patientName: string; authorRole: string; reason: string; timestamp: number };
 
 type HealthInfo = {
   allergies: string[];
@@ -443,6 +444,73 @@ function vitalStatus(field: keyof Omit<VitalSigns, "id" | "authorRole" | "timest
   }
 }
 
+type HealthBadge = { level: "stable" | "risky" | "danger"; reason: string };
+
+function getHealthBadge(
+  patient: Patient,
+  vitals: VitalSigns[],
+  wellbeingHistory: WellbeingEntry[],
+): HealthBadge | null {
+  if (vitals.length === 0 && wellbeingHistory.length === 0) return null;
+
+  let level: "stable" | "risky" | "danger" = "stable";
+  let reason = "";
+
+  const latestVitals = vitals.length > 0
+    ? [...vitals].sort((a, b) => b.timestamp - a.timestamp)[0]
+    : undefined;
+  const latestWellbeing = wellbeingHistory.length > 0
+    ? [...wellbeingHistory].sort((a, b) => b.timestamp - a.timestamp)[0]
+    : undefined;
+
+  if (latestVitals) {
+    const checks: [string, keyof Omit<VitalSigns, "id" | "authorRole" | "timestamp">][] = [
+      ["Systolic BP",  "systolic"],
+      ["Diastolic BP", "diastolic"],
+      ["Heart rate",   "heartRate"],
+      ["Temperature",  "temperature"],
+      ["SpO₂",         "oxygenSaturation"],
+      ["Resp. rate",   "respiratoryRate"],
+    ];
+    for (const [label, key] of checks) {
+      const s = vitalStatus(key, latestVitals[key] as number | null);
+      if (s === "concern") {
+        level = "danger";
+        if (!reason) reason = `${label} out of safe range`;
+        break;
+      }
+      if (s === "caution" && level === "stable") {
+        level = "risky";
+        if (!reason) reason = `${label} borderline`;
+      }
+    }
+  }
+
+  if (latestWellbeing) {
+    const metricLabels: Record<keyof Baseline, string> = {
+      mood: "Mood", appetite: "Appetite", mobility: "Mobility", sleep: "Sleep",
+    };
+    for (const m of ["mood", "appetite", "mobility", "sleep"] as (keyof Baseline)[]) {
+      const delta = patient.baseline[m] - latestWellbeing[m];
+      if (delta >= 3) {
+        level = "danger";
+        if (!reason) reason = `${metricLabels[m]} significantly below baseline`;
+      } else if (delta >= 2 && level === "stable") {
+        level = "risky";
+        if (!reason) reason = `${metricLabels[m]} below baseline`;
+      }
+    }
+  }
+
+  return { level, reason: reason || "Within normal range" };
+}
+
+const HEALTH_BADGE_STYLE: Record<"stable" | "risky" | "danger", string> = {
+  stable: "bg-emerald-100 text-emerald-700",
+  risky:  "bg-amber-100 text-amber-700",
+  danger: "bg-red-100 text-red-700",
+};
+
 function statusColor(status: VitalStatus): string {
   if (status === "concern") return "text-destructive";
   if (status === "caution") return "text-amber-600";
@@ -639,13 +707,18 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
   
   const [hydrated, setHydrated] = useState(false);
 
-  const [patients, setPatients] = useState<Patient[]>(() => (org ? DEMO_PATIENTS[org] ?? [] : []));
+  // Family and patient roles must NOT pre-populate from demo data — their list comes from the API filtered by identity.
+  const [patients, setPatients] = useState<Patient[]>(() => {
+    if (roleProp === "family" || roleProp === "patient") return [];
+    return org ? DEMO_PATIENTS[org] ?? [] : [];
+  });
   const [wellbeingByPatient, setWellbeingByPatient] = useState<Record<string, WellbeingEntry[]>>({});
   const [notesByPatient, setNotesByPatient] = useState<Record<string, CareNote[]>>({});
   const [reportsByPatient, setReportsByPatient] = useState<Record<string, MedicalReport[]>>({});
   const [referralsByPatient, setReferralsByPatient] = useState<Record<string, ReferralNote[]>>({});
   const [vitalsByPatient, setVitalsByPatient] = useState<Record<string, VitalSigns[]>>({});
   const [diagnosesByPatient, setDiagnosesByPatient] = useState<Record<string, Diagnosis[]>>({});
+  const [visitsByPatient, setVisitsByPatient] = useState<Record<string, { authorRole: string; timestamp: number }>>({});
   
   const [dischargeSummariesByPatient, setDischargeSummariesByPatient] = useState<Record<string, DischargeSummary[]>>({});
   const [fallRiskByPatient, setFallRiskByPatient] = useState<Record<string, FallRiskAssessment[]>>({});
@@ -670,7 +743,7 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
   const bcRef = useRef<BroadcastChannel | null>(null);
   
   
-  const liveCtxRef = useRef({ isFamilyRole: false, isPatientRole: false, displayIdentity: "", patients: [] as Patient[] });
+  const liveCtxRef = useRef({ isFamilyRole: false, isPatientRole: false, displayIdentity: "", staffName: "", patients: [] as Patient[] });
   
   const [wellbeingAlert, setWellbeingAlert] = useState<{
     patientName: string;
@@ -681,7 +754,7 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
   const selectedPatient = patients.find((p) => p.id === selectedId);
 
   
-  liveCtxRef.current = { isFamilyRole, isPatientRole, displayIdentity, patients };
+  liveCtxRef.current = { isFamilyRole, isPatientRole, displayIdentity, staffName, patients };
 
   const patientWellbeingHistory = selectedPatient ? wellbeingByPatient[selectedPatient.id] ?? [] : [];
   const latestCheck = patientWellbeingHistory.length > 0 ? patientWellbeingHistory[patientWellbeingHistory.length - 1] : undefined;
@@ -880,9 +953,12 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
     
     
     
-    const cached = loadFromStorage(`tracewell:${org}:patients`, null);
-    if (cached) setPatients((cached as Patient[]).map(normalizePatient));
-    else        setPatients((DEMO_PATIENTS[org] ?? []).map(normalizePatient));
+    // Family and patient roles get their list from the API only — localStorage may contain another role's patient cache.
+    if (!isFamilyRole && !isPatientRole) {
+      const cached = loadFromStorage(`tracewell:${org}:patients`, null);
+      if (cached) setPatients((cached as Patient[]).map(normalizePatient));
+      else        setPatients((DEMO_PATIENTS[org] ?? []).map(normalizePatient));
+    }
 
     setHydrated(true);
 
@@ -998,7 +1074,7 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
   
   
   function applyLiveEvent(ev: LiveEvent) {
-    const { isFamilyRole, isPatientRole, displayIdentity, patients } = liveCtxRef.current;
+    const { isFamilyRole, isPatientRole, displayIdentity, staffName, patients } = liveCtxRef.current;
 
     
     if ((ev as { authorRole?: string }).authorRole === displayIdentity) return;
@@ -1053,6 +1129,12 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
         ) };
         saveToStorage(`tracewell:${org}:referrals`, updated);
         return updated;
+      });
+    } else if (ev.type === "clinical_visit") {
+      setVisitsByPatient((prev) => {
+        const existing = prev[ev.patientId];
+        if (existing && existing.timestamp >= ev.timestamp) return prev;
+        return { ...prev, [ev.patientId]: { authorRole: ev.authorRole, timestamp: ev.timestamp } };
       });
     }
 
@@ -1109,8 +1191,9 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
         if (noteType === "family_update") return;
         message = `${ev.authorRole} logged on ${ev.patientName}: "${ev.preview}"`;
       } else if (ev.type === "referral") {
-        const recipients = ev.toRecipients.join(", ");
-        message = `Referral for ${ev.patientName} from ${ev.authorRole} → ${recipients}`;
+        // Only notify if this user is a named recipient (sender is already filtered above)
+        if (!staffName || !ev.toRecipients.some((rec) => rec.includes(staffName))) return;
+        message = `New referral for ${ev.patientName} from ${ev.authorRole}`;
       } else if (ev.type === "chat") {
         message = `${(ev as Extract<LiveEvent, { type: "chat" }>).authorName}: "${ev.preview}" (re: ${ev.patientName})`;
       } else if (ev.type === "vitals") {
@@ -1259,11 +1342,33 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
   
   const lastClinicalActivity: { authorRole: string; timestamp: number } | undefined = (() => {
     if (!selectedPatient) return undefined;
+    const pid = selectedPatient.id;
     const candidates: { authorRole: string; timestamp: number }[] = [];
+
+    // Care notes by clinical staff
     const clinicalNote = visibleNotes.find((n) => /\b(Nurse|Carer|Doctor)\b/.test(n.authorRole));
     if (clinicalNote) candidates.push({ authorRole: clinicalNote.authorRole, timestamp: clinicalNote.timestamp });
-    const latestVital = [...(vitalsByPatient[selectedPatient.id] ?? [])].sort((a, b) => b.timestamp - a.timestamp)[0];
+
+    // Vital signs
+    const latestVital = [...(vitalsByPatient[pid] ?? [])].sort((a, b) => b.timestamp - a.timestamp)[0];
     if (latestVital?.authorRole) candidates.push({ authorRole: latestVital.authorRole, timestamp: latestVital.timestamp });
+
+    // Wellbeing checks (authorRole not stored in entry — falls back to "Care team" label)
+    const latestWellbeing = [...(wellbeingByPatient[pid] ?? [])].sort((a, b) => b.timestamp - a.timestamp)[0];
+    if (latestWellbeing) candidates.push({ authorRole: "Care team", timestamp: latestWellbeing.timestamp });
+
+    // Diagnoses (doctor adds/updates a diagnosis)
+    const latestDiagnosis = [...(diagnosesByPatient[pid] ?? [])]
+      .filter((d) => d.timestamp && d.authorRole)
+      .sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0))[0];
+    if (latestDiagnosis?.authorRole && latestDiagnosis?.timestamp) {
+      candidates.push({ authorRole: latestDiagnosis.authorRole, timestamp: latestDiagnosis.timestamp });
+    }
+
+    // Profile / medication updates (broadcast as clinical_visit event)
+    const visit = visitsByPatient[pid];
+    if (visit) candidates.push(visit);
+
     return candidates.sort((a, b) => b.timestamp - a.timestamp)[0];
   })();
 
@@ -2023,6 +2128,9 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
     if (!selectedPatient) return;
     setPatients((prev) => prev.map((p) => (p.id === selectedPatient.id ? { ...p, profile: profileDraft } : p)));
     setProfileEditOpen(false);
+    const now = Date.now();
+    setVisitsByPatient((prev) => ({ ...prev, [selectedPatient.id]: { authorRole: displayIdentity, timestamp: now } }));
+    broadcast({ type: "clinical_visit", org, patientId: selectedPatient.id, patientName: selectedPatient.name, authorRole: displayIdentity, reason: "profile_update", timestamp: now });
   }
 
   function addMedication() {
@@ -2033,11 +2141,17 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
     setMedDose("");
     setMedFrequency("");
     setMedFormOpen(false);
+    const now = Date.now();
+    setVisitsByPatient((prev) => ({ ...prev, [selectedPatient.id]: { authorRole: displayIdentity, timestamp: now } }));
+    broadcast({ type: "clinical_visit", org, patientId: selectedPatient.id, patientName: selectedPatient.name, authorRole: displayIdentity, reason: "medication_update", timestamp: now });
   }
 
   function removeMedication(medId: string) {
     if (!selectedPatient) return;
     setPatients((prev) => prev.map((p) => (p.id === selectedPatient.id ? { ...p, medications: p.medications.filter((m) => m.id !== medId) } : p)));
+    const now = Date.now();
+    setVisitsByPatient((prev) => ({ ...prev, [selectedPatient.id]: { authorRole: displayIdentity, timestamp: now } }));
+    broadcast({ type: "clinical_visit", org, patientId: selectedPatient.id, patientName: selectedPatient.name, authorRole: displayIdentity, reason: "medication_update", timestamp: now });
   }
 
   
@@ -2577,6 +2691,7 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
             {patients.map((p) => {
               const isSelected = p.id === selectedId;
               const latestNote = [...(notesByPatient[p.id] ?? [])].sort((a, b) => b.timestamp - a.timestamp)[0];
+              const healthBadge = getHealthBadge(p, vitalsByPatient[p.id] ?? [], wellbeingByPatient[p.id] ?? []);
               return (
                 <button
                   key={p.id}
@@ -2610,7 +2725,17 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
                   }}
                   className={`rounded-lg px-3 py-2 text-left transition-colors ${isSelected ? "bg-teal-soft" : "hover:bg-secondary"}`}
                 >
-                  <div className="text-sm font-medium text-ink">{p.name}</div>
+                  <div className="flex items-center justify-between gap-1">
+                    <div className="text-sm font-medium text-ink">{p.name}</div>
+                    {healthBadge && (
+                      <span
+                        title={healthBadge.reason}
+                        className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize ${HEALTH_BADGE_STYLE[healthBadge.level]}`}
+                      >
+                        {healthBadge.level}
+                      </span>
+                    )}
+                  </div>
                   <div className="text-xs text-ink-soft">{p.room} · Age {p.age}</div>
                   {latestNote && (
                     <div className="mt-0.5 text-[11px] text-muted-foreground">
@@ -2639,7 +2764,21 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
               />
             ) : (
               <div>
-                <h1 className="text-2xl">{selectedPatient.name}</h1>
+                <div className="flex items-center gap-3">
+                  <h1 className="text-2xl">{selectedPatient.name}</h1>
+                  {(() => {
+                    const badge = getHealthBadge(selectedPatient, patientVitalsHistory, patientWellbeingHistory);
+                    if (!badge) return null;
+                    return (
+                      <span
+                        title={badge.reason}
+                        className={`rounded-full px-3 py-1 text-xs font-semibold capitalize ${HEALTH_BADGE_STYLE[badge.level]}`}
+                      >
+                        {badge.level}
+                      </span>
+                    );
+                  })()}
+                </div>
                 <p className="mt-1 text-ink-soft">{selectedPatient.room} · Age {selectedPatient.age}</p>
 
                 <div className="mt-6 rounded-xl border border-border bg-background p-4">

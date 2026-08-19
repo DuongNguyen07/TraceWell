@@ -844,6 +844,7 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
   const [referralMessage, setReferralMessage] = useState("");
   const [deleteReferralId, setDeleteReferralId] = useState<string | null>(null);
   const [deleteNoteId, setDeleteNoteId] = useState<string | null>(null);
+  const [deleteDiagnosisId, setDeleteDiagnosisId] = useState<string | null>(null);
   const [orgStaff, setOrgStaff] = useState<StaffMember[]>([]);
   
   const [changePwOpen, setChangePwOpen] = useState(false);
@@ -1191,8 +1192,9 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
         if (noteType === "family_update") return;
         message = `${ev.authorRole} logged on ${ev.patientName}: "${ev.preview}"`;
       } else if (ev.type === "referral") {
-        // Only notify if this user is a named recipient (sender is already filtered above)
-        if (!staffName || !ev.toRecipients.some((rec) => rec.includes(staffName))) return;
+        // Only notify if this user is a named recipient (sender is already filtered above).
+        // If staffName is unknown (no session/URL param), show to all staff as fallback.
+        if (staffName && !ev.toRecipients.some((rec) => rec.toLowerCase().includes(staffName.toLowerCase()))) return;
         message = `New referral for ${ev.patientName} from ${ev.authorRole}`;
       } else if (ev.type === "chat") {
         message = `${(ev as Extract<LiveEvent, { type: "chat" }>).authorName}: "${ev.preview}" (re: ${ev.patientName})`;
@@ -2387,9 +2389,11 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
   }
 
   function deleteDiagnosis(diagnosisId: string) {
+    setDeleteDiagnosisId(diagnosisId);
+  }
+
+  function confirmDeleteDiagnosis(diagnosisId: string) {
     if (!selectedPatient) return;
-    const confirmed = window.confirm("Delete this diagnosis entry? This cannot be undone.");
-    if (!confirmed) return;
     setDiagnosesByPatient((prev) => ({
       ...prev,
       [selectedPatient.id]: (prev[selectedPatient.id] ?? []).filter((d) => d.id !== diagnosisId),
@@ -4236,6 +4240,31 @@ export default function DashboardView({ role: roleProp, org: orgProp }: { role?:
               </button>
               <button
                 onClick={() => setDeleteNoteId(null)}
+                className="flex-1 rounded-full border border-border py-2 text-sm text-ink-soft hover:bg-secondary"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteDiagnosisId !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-sm rounded-2xl border border-border bg-card p-6 shadow-lift">
+            <h2 className="text-base font-semibold text-ink">Remove from problem list?</h2>
+            <p className="mt-2 text-sm text-ink-soft">
+              This diagnosis entry will be permanently removed. This action cannot be undone.
+            </p>
+            <div className="mt-5 flex gap-3">
+              <button
+                onClick={() => { confirmDeleteDiagnosis(deleteDiagnosisId); setDeleteDiagnosisId(null); }}
+                className="flex-1 rounded-full bg-destructive py-2 text-sm font-medium text-white hover:opacity-80"
+              >
+                Remove
+              </button>
+              <button
+                onClick={() => setDeleteDiagnosisId(null)}
                 className="flex-1 rounded-full border border-border py-2 text-sm text-ink-soft hover:bg-secondary"
               >
                 Cancel
